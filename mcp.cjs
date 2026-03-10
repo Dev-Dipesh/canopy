@@ -104,14 +104,23 @@ server.registerTool(
   },
   async ({ source, type: diagramType, output_path }) => {
     const fmt = OUTPUT_FORMAT[diagramType] ?? "png";
+    const mimeType = fmt === "svg" ? "image/svg+xml" : "image/png";
 
-    let outputPath = output_path;
-    if (!outputPath) {
+    // Resolve output path — fall back to temp dir if the requested path is
+    // unreachable (e.g. Claude's internal /mnt/user-data sandbox paths).
+    let outputPath;
+    if (output_path) {
+      try {
+        const resolved = path.resolve(output_path);
+        fs.mkdirSync(path.dirname(resolved), { recursive: true });
+        outputPath = resolved;
+      } catch {
+        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "diagram-render-"));
+        outputPath = path.join(tmpDir, `diagram.${fmt}`);
+      }
+    } else {
       const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "diagram-render-"));
       outputPath = path.join(tmpDir, `diagram.${fmt}`);
-    } else {
-      fs.mkdirSync(path.dirname(path.resolve(outputPath)), { recursive: true });
-      outputPath = path.resolve(outputPath);
     }
 
     const krokiUrl = await resolveKrokiUrl();
@@ -124,6 +133,11 @@ server.registerTool(
           {
             type: "text",
             text: `Rendered ${diagramType} diagram (${fmt}) → ${outputPath}\nKroki server: ${krokiUrl}`,
+          },
+          {
+            type: "image",
+            data: data.toString("base64"),
+            mimeType,
           },
         ],
       };
@@ -175,11 +189,17 @@ server.registerTool(
       };
     }
 
-    const outDir = output_dir
-      ? path.resolve(output_dir)
-      : fs.mkdtempSync(path.join(os.tmpdir(), "diagram-render-"));
-
-    fs.mkdirSync(outDir, { recursive: true });
+    let outDir;
+    if (output_dir) {
+      try {
+        outDir = path.resolve(output_dir);
+        fs.mkdirSync(outDir, { recursive: true });
+      } catch {
+        outDir = fs.mkdtempSync(path.join(os.tmpdir(), "diagram-render-"));
+      }
+    } else {
+      outDir = fs.mkdtempSync(path.join(os.tmpdir(), "diagram-render-"));
+    }
 
     const krokiUrl = await resolveKrokiUrl();
 
@@ -207,11 +227,17 @@ server.registerTool(
         const source = fs.readFileSync(resolvedInput, "utf8");
         const data = await krokiRender(source, diagramType, krokiUrl);
         fs.writeFileSync(outputPath, data);
+        const mimeType = fmt === "svg" ? "image/svg+xml" : "image/png";
         return {
           content: [
             {
               type: "text",
               text: `Rendered ${diagramType} (${fmt}) → ${outputPath}\nKroki server: ${krokiUrl}`,
+            },
+            {
+              type: "image",
+              data: data.toString("base64"),
+              mimeType,
             },
           ],
         };
