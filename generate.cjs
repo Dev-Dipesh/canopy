@@ -42,6 +42,7 @@ const path = require("node:path");
 const http = require("node:http");
 const https = require("node:https");
 const readline = require("node:readline");
+const zlib = require("node:zlib");
 const { URL } = require("node:url");
 
 const LOCAL_URL = "http://localhost:8000";
@@ -277,11 +278,18 @@ function askConfirm(question) {
   });
 }
 
+// Encodes diagram source using Kroki's standard encoding: deflate (raw) + base64url.
+// Kroki's POST endpoint auto-detects encoded vs raw, so this works for all types
+// and is more robust than sending raw text (required for formats like Excalidraw).
+function encodeSource(source) {
+  return zlib.deflateRawSync(Buffer.from(source, "utf8")).toString("base64url");
+}
+
 function krokiRender(source, diagramType, krokiUrl) {
   return new Promise((resolve, reject) => {
     const url = new URL(`/${diagramType}/png`, krokiUrl);
     const transport = url.protocol === "https:" ? https : http;
-    const body = Buffer.from(source, "utf8");
+    const body = Buffer.from(encodeSource(source), "utf8");
     const req = transport.request(
       {
         hostname: url.hostname,
