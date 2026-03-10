@@ -1,0 +1,10 @@
+{
+  "name": "diagram-render",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Kroki-based PlantUML to PNG renderer — no runtime dependencies",
+  "scripts": {
+    "render": "node generate.cjs",
+    "render:one": "node generate.cjs"
+  }
+}
