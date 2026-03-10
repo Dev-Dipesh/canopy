@@ -28,12 +28,15 @@
  *   node generate.cjs -o ./docs/images         # custom output directory
  *   node generate.cjs -i ./arch -o ./out       # both
  *   node generate.cjs flow.puml -o ./out       # single file, custom output
+ *   node generate.cjs --kroki-url http://localhost:8000  # use local Kroki server
  *   node generate.cjs --help                   # show this help
  */
 
 const fs = require("node:fs");
 const path = require("node:path");
+const http = require("node:http");
 const https = require("node:https");
+const { URL } = require("node:url");
 
 // Maps file extension -> Kroki diagram type (for individual source files).
 // Full list: https://kroki.io/#support
@@ -163,9 +166,10 @@ Arguments:
   file                 Single source file to render (looked up in input dir)
 
 Options:
-  -i, --input <dir>    Source directory  (default: ./src)
-  -o, --output <dir>   Output directory  (default: ./diagrams)
-  -h, --help           Show this help
+  -i, --input <dir>        Source directory   (default: ./src)
+  -o, --output <dir>       Output directory   (default: ./diagrams)
+  -k, --kroki-url <url>    Kroki server URL   (default: https://kroki.io)
+  -h, --help               Show this help
 
 Supported individual file formats (auto-detected from extension):
 ${Object.entries(
@@ -193,7 +197,7 @@ Markdown (.md) files:
 }
 
 function parseArgs(argv) {
-  const args = { input: null, output: null, file: null, help: false };
+  const args = { input: null, output: null, krokiUrl: null, file: null, help: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--help" || a === "-h") {
@@ -202,6 +206,8 @@ function parseArgs(argv) {
       args.input = argv[++i];
     } else if ((a === "--output" || a === "-o") && argv[i + 1]) {
       args.output = argv[++i];
+    } else if ((a === "--kroki-url" || a === "-k") && argv[i + 1]) {
+      args.krokiUrl = argv[++i];
     } else if (!a.startsWith("-")) {
       args.file = a;
     }
@@ -231,13 +237,16 @@ function parseMarkdownDiagrams(content) {
   return results;
 }
 
-function krokiRender(source, diagramType) {
+function krokiRender(source, diagramType, krokiUrl) {
   return new Promise((resolve, reject) => {
+    const url = new URL(`/${diagramType}/png`, krokiUrl);
+    const transport = url.protocol === "https:" ? https : http;
     const body = Buffer.from(source, "utf8");
-    const req = https.request(
+    const req = transport.request(
       {
-        hostname: "kroki.io",
-        path: `/${diagramType}/png`,
+        hostname: url.hostname,
+        port: url.port || undefined,
+        path: url.pathname,
         method: "POST",
         headers: {
           "Content-Type": "text/plain; charset=utf-8",
@@ -271,7 +280,7 @@ function krokiRender(source, diagramType) {
 // Renders all diagram code blocks found in a markdown file.
 // Output: outputDir/<mdBasename>/<title>.png  (titled)
 //         outputDir/<mdBasename>/<krokiType>-<N>.png  (untitled)
-async function renderMarkdownFile(filePath, outputDir) {
+async function renderMarkdownFile(filePath, outputDir, krokiUrl) {
   const content = fs.readFileSync(filePath, "utf8");
   const diagrams = parseMarkdownDiagrams(content);
   const mdName = path.basename(filePath, ".md");
@@ -297,7 +306,7 @@ async function renderMarkdownFile(filePath, outputDir) {
 
     process.stdout.write(`  [${krokiType}] ${outName} ... `);
     try {
-      const png = await krokiRender(source, krokiType);
+      const png = await krokiRender(source, krokiType, krokiUrl);
       fs.writeFileSync(outputPath, png);
       ok += 1;
       console.log("ok");
@@ -321,6 +330,9 @@ async function main() {
 
   const inputDir = path.resolve(args.input ?? "src");
   const outputDir = path.resolve(args.output ?? "diagrams");
+  const krokiUrl = args.krokiUrl ?? "https://kroki.io";
+
+  console.log(`Kroki: ${krokiUrl}`);
 
   if (!fs.existsSync(inputDir)) {
     console.error(`Input directory not found: ${inputDir}`);
@@ -367,7 +379,7 @@ async function main() {
 
     if (ext === ".md") {
       console.log(`[markdown] ${file}`);
-      const result = await renderMarkdownFile(inputPath, outputDir);
+      const result = await renderMarkdownFile(inputPath, outputDir, krokiUrl);
       ok += result.ok;
       failed += result.failed;
     } else {
@@ -378,7 +390,7 @@ async function main() {
 
       process.stdout.write(`[${diagramType}] ${file} -> ${outName} ... `);
       try {
-        const png = await krokiRender(source, diagramType);
+        const png = await krokiRender(source, diagramType, krokiUrl);
         fs.writeFileSync(outputPath, png);
         ok += 1;
         console.log("ok");

@@ -202,9 +202,39 @@ diagram-render/
         └── mermaid-01.png
 ```
 
+## Local Kroki server
+
+Run your own Kroki instance via Docker to avoid sending diagrams to the public server.
+
+```bash
+make up       # start all containers (detached)
+make down     # stop and remove containers
+make restart  # restart containers
+make          # show available commands
+```
+
+The server starts on `http://localhost:8000`. Then point the script at it:
+
+```bash
+node generate.cjs --kroki-url http://localhost:8000
+npm run render -- --kroki-url http://localhost:8000
+```
+
+Containers started by `docker-compose.yml`:
+
+| Service      | Image                       | Covers                                           |
+|--------------|-----------------------------|--------------------------------------------------|
+| `kroki`      | yuzutech/kroki              | Core (PlantUML, C4, GraphViz, D2, Mermaid, etc.) |
+| `mermaid`    | yuzutech/kroki-mermaid      | Mermaid                                          |
+| `blockdiag`  | yuzutech/kroki-blockdiag    | BlockDiag, SeqDiag, ActDiag, NwDiag, PacketDiag, RackDiag |
+| `bpmn`       | yuzutech/kroki-bpmn         | BPMN                                             |
+| `excalidraw` | yuzutech/kroki-excalidraw   | Excalidraw                                       |
+| `wireviz`    | yuzutech/kroki-wireviz      | WireViz                                          |
+
+If you only need core types (PlantUML, GraphViz, D2, etc.) and not Mermaid/BPMN/Excalidraw/WireViz, you can remove the companion services from `docker-compose.yml` to save memory.
+
 ## Notes
 
-- Requires internet access — rendering is done via `https://kroki.io`.
-- `diagrams/` is gitignored. Commit only source files in `src/`.
+- By default, rendering uses the public `https://kroki.io`. Use `--kroki-url` to point at a local instance.
 - Non-diagram code blocks in `.md` files are silently skipped.
-- Title slugs should be `kebab-case`. Characters outside `[a-zA-Z0-9-_]` are not sanitised — keep slugs simple.
+- Title slugs should be `kebab-case`. Quoted titles may contain spaces but avoid special shell characters.
