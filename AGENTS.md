@@ -31,6 +31,21 @@ Requires internet access — rendering is done via `https://kroki.io`.
 
 Drop source files into `src/` (or any directory, using `-i`) and run `npm run render`. See README.md for the full list of supported extensions and how to add more.
 
+## Debugging
+
+### New diagram type renders fail with HTTP 400 and a PNG error image body
+
+Kroki returns error messages as rendered PNG images, not plain text. If a new diagram type fails with `HTTP 400` and the response body looks like binary PNG data, open the saved file (if any) or add temporary logging to read the error text — the actual error message is rendered inside the image.
+
+**Known root causes:**
+
+1. **Wrong output format.** Some Kroki types only support SVG, not PNG. Requesting PNG for them returns an error image with a message like `Unsupported output format: png for <type>. Must be one of svg`.
+   - Fix: add the type to `OUTPUT_FORMAT` in `generate.cjs` with `"svg"` as the value.
+   - Known SVG-only types already mapped: `excalidraw`, `bpmn`, `bytefield`, `nomnoml`, `pikchr`, `svgbob`, `wavedrom`.
+   - If a new type fails, check https://kroki.io/#support for its supported output formats.
+
+2. **Wrong POST body encoding.** The Kroki POST endpoint expects the raw diagram source as plain text. Do not deflate/base64url-encode the body — that encoding is only for GET URL parameters. Sending encoded data to POST causes companions (especially JSON-based ones like Excalidraw) to reject the input.
+
 ## Code Quality
 
 - Use JSDoc comments for any non-obvious functions.
