@@ -15,9 +15,13 @@
  * HTTP file server (same process, loopback only):
  *   GET http://127.0.0.1:<port>/<id>   → serves a rendered image by short ID
  *   POST http://127.0.0.1:<port>/render { source, type } → raw image bytes (direct render)
- *   IDs are in-memory only — they reset when the server restarts.
  *   Preferred port: 17432 (tries 17432–17440 until one is free).
  *   Override start port: DIAGRAM_RENDER_HTTP_PORT env var.
+ *
+ * Persistent storage:
+ *   Images default to ~/.diagram-render/output/<id>.<ext> — survives reboots.
+ *   Registry persisted to ~/.diagram-render/registry.json — survives server restarts.
+ *   Preview URLs remain valid as long as the image file exists on disk.
  *
  * Kroki server selection (non-interactive):
  *   Tries local Kroki at http://localhost:8000 first.
@@ -55,6 +59,14 @@ const HTTP_PORT_START = parseInt(process.env.DIAGRAM_RENDER_HTTP_PORT ?? "17432"
 let httpPort = null;
 
 // ---------------------------------------------------------------------------
+// Persistent storage paths
+// ---------------------------------------------------------------------------
+
+const HOME_DIR = path.join(os.homedir(), ".diagram-render");
+const OUTPUT_DIR = path.join(HOME_DIR, "output");
+const REGISTRY_FILE = path.join(HOME_DIR, "registry.json");
+
+// ---------------------------------------------------------------------------
 // Kroki URL resolution — no stdin, resolved per-call
 // ---------------------------------------------------------------------------
 
@@ -68,21 +80,61 @@ async function resolveKrokiUrl() {
 
 // ---------------------------------------------------------------------------
 // File registry — maps short IDs to rendered files for HTTP serving
+// Persisted to ~/.diagram-render/registry.json so URLs survive restarts.
 // ---------------------------------------------------------------------------
 
 /** id → { filePath, mimeType } */
 const fileRegistry = new Map();
 
+/** Loads persisted registry entries from disk into the in-memory Map. */
+function loadRegistry() {
+  if (!fs.existsSync(REGISTRY_FILE)) return;
+  try {
+    const entries = JSON.parse(fs.readFileSync(REGISTRY_FILE, "utf8"));
+    for (const [id, entry] of Object.entries(entries)) {
+      fileRegistry.set(id, entry);
+    }
+    process.stderr.write(`diagram-render: registry loaded (${fileRegistry.size} entries)\n`);
+  } catch {
+    process.stderr.write("diagram-render: could not read registry, starting fresh\n");
+  }
+}
+
+/** Writes the current in-memory registry to disk. */
+function persistRegistry() {
+  fs.writeFileSync(REGISTRY_FILE, JSON.stringify(Object.fromEntries(fileRegistry), null, 2), "utf8");
+}
+
 /**
- * Registers a rendered file and returns its preview URL.
+ * Registers a user-provided file path and returns its preview URL.
+ * Use allocateOutput() instead when no explicit path is given.
+ *
  * @param {string} filePath - Absolute path to the rendered file.
  * @param {string} mimeType - MIME type (image/png or image/svg+xml).
- * @returns {string} Preview URL, e.g. http://127.0.0.1:8765/a1b2c3d4e5f6
+ * @returns {string} Preview URL.
  */
 function registerFile(filePath, mimeType) {
   const id = crypto.randomBytes(6).toString("hex");
   fileRegistry.set(id, { filePath, mimeType });
+  persistRegistry();
   return `http://127.0.0.1:${httpPort}/${id}`;
+}
+
+/**
+ * Allocates a persistent output path under ~/.diagram-render/output/,
+ * pre-registers it, and returns the file path and preview URL together.
+ * The file doesn't exist yet — caller must write it before the URL is useful.
+ *
+ * @param {string} fmt - File extension without dot (e.g. "png", "svg").
+ * @returns {{ filePath: string, previewUrl: string }}
+ */
+function allocateOutput(fmt) {
+  const id = crypto.randomBytes(6).toString("hex");
+  const mimeType = fmt === "svg" ? "image/svg+xml" : "image/png";
+  const filePath = path.join(OUTPUT_DIR, `${id}.${fmt}`);
+  fileRegistry.set(id, { filePath, mimeType });
+  persistRegistry();
+  return { filePath, previewUrl: `http://127.0.0.1:${httpPort}/${id}` };
 }
 
 // ---------------------------------------------------------------------------
@@ -241,7 +293,7 @@ server.registerTool(
         "Kroki diagram type (e.g. plantuml, mermaid, graphviz, d2). Run list_supported_types for the full list.",
       ),
       output_path: z.string().optional().describe(
-        "Where to save the output image. If omitted, saves to a temp file.",
+        "Where to save the output image. If omitted, saves to ~/.diagram-render/output/ (persistent).",
       ),
     }),
   },
@@ -249,19 +301,20 @@ server.registerTool(
     const fmt = OUTPUT_FORMAT[diagramType] ?? "png";
     const mimeType = fmt === "svg" ? "image/svg+xml" : "image/png";
 
+    // Allocate output path. User-provided paths are saved as-is (and registered);
+    // if the path is unreachable (e.g. Claude sandbox paths) fall back to persistent store.
     let outputPath;
+    let previewUrl;
     if (output_path) {
       try {
-        const resolved = path.resolve(output_path);
-        fs.mkdirSync(path.dirname(resolved), { recursive: true });
-        outputPath = resolved;
+        outputPath = path.resolve(output_path);
+        fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+        // Will register after render succeeds
       } catch {
-        const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "diagram-render-"));
-        outputPath = path.join(tmpDir, `diagram.${fmt}`);
+        ({ filePath: outputPath, previewUrl } = allocateOutput(fmt));
       }
     } else {
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "diagram-render-"));
-      outputPath = path.join(tmpDir, `diagram.${fmt}`);
+      ({ filePath: outputPath, previewUrl } = allocateOutput(fmt));
     }
 
     const krokiUrl = await resolveKrokiUrl();
@@ -269,7 +322,8 @@ server.registerTool(
     try {
       const data = await krokiRender(source, diagramType, krokiUrl);
       fs.writeFileSync(outputPath, data);
-      const previewUrl = registerFile(outputPath, mimeType);
+      // Register user-provided path now that the file exists
+      if (!previewUrl) previewUrl = registerFile(outputPath, mimeType);
       return {
         content: [
           {
@@ -305,7 +359,7 @@ server.registerTool(
         "Absolute path to the diagram source file (.puml, .mmd, .md, etc.).",
       ),
       output_dir: z.string().optional().describe(
-        "Directory to write the output image(s) to. Defaults to a temp directory.",
+        "Directory to write the output image(s) to. Defaults to ~/.diagram-render/output/ (persistent).",
       ),
     }),
   },
@@ -336,11 +390,12 @@ server.registerTool(
         outDir = path.resolve(output_dir);
         fs.mkdirSync(outDir, { recursive: true });
       } catch {
-        outDir = fs.mkdtempSync(path.join(os.tmpdir(), "diagram-render-"));
+        outDir = OUTPUT_DIR;
       }
     } else {
-      outDir = fs.mkdtempSync(path.join(os.tmpdir(), "diagram-render-"));
+      outDir = OUTPUT_DIR;
     }
+    fs.mkdirSync(outDir, { recursive: true });
 
     const krokiUrl = await resolveKrokiUrl();
 
@@ -401,6 +456,10 @@ async function main() {
   if (idx !== -1 && process.argv[idx + 1]) {
     process.env.DIAGRAM_RENDER_KROKI_URL = process.argv[idx + 1];
   }
+
+  // Ensure persistent storage dirs exist and restore registry from last run
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  loadRegistry();
 
   await startHttpServer(HTTP_PORT_START);
 

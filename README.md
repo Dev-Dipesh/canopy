@@ -235,4 +235,4 @@ Restart Claude Desktop after editing. The MCP server starts automatically when t
 
 - `diagrams/private/` and `src/private/` are gitignored — use them for sensitive diagrams.
 - Non-diagram code blocks in `.md` files are silently skipped.
-- Preview URLs are served from an in-memory registry — they reset when the MCP server restarts.
+- Rendered images are saved to `~/.diagram-render/output/` and persist across reboots. The registry is persisted to `~/.diagram-render/registry.json` and reloaded on each server start, so preview URLs remain valid indefinitely as long as the image file exists on disk.
