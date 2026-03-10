@@ -31,7 +31,8 @@ package "CLI path" {
 
 package "MCP path" {
   component "mcp.cjs\n(stdio)" as mcp
-  component "fileRegistry\n(in-memory Map\nid → filePath)" as reg
+  component "fileRegistry\n(Map id → filePath)\npersisted to registry.json" as reg
+  database "~/.diagram-render/\noutput/" as store
   component "HTTP :17432\n(file server)" as http
 }
 
@@ -50,6 +51,7 @@ cli --> out : saves
 
 ai --> mcp : render_diagram()\nrender_file()
 mcp --> local : POST source
+mcp --> store : save <id>.<ext>
 mcp --> reg : store (id, path)
 reg ..> http : serves file
 mcp --> ai : Preview URL\nhttp://127.0.0.1:17432/<id>
@@ -61,14 +63,15 @@ sequenceDiagram
     actor Claude
     participant MCP as mcp.cjs
     participant Kroki as Kroki server
-    participant Reg as fileRegistry (Map)
+    participant Store as ~/.diagram-render/output/
+    participant Reg as fileRegistry (Map + registry.json)
     participant HTTP as HTTP :17432
 
     Claude->>MCP: render_diagram(source, type)
     MCP->>Kroki: POST /plantuml/png
     Kroki-->>MCP: PNG bytes
-    MCP->>MCP: write to /tmp/diagram-render-xxx/diagram.png
-    MCP->>Reg: set(id, {filePath, mimeType})
+    MCP->>Store: write <id>.png
+    MCP->>Reg: set(id, {filePath, mimeType}) + persist to disk
     MCP-->>Claude: Preview URL http://127.0.0.1:17432/<id>
     Note over Claude: shares URL with user
     Claude-->>MCP: user opens link in browser
