@@ -207,10 +207,17 @@ diagram-render/
 Run your own Kroki instance via Docker to avoid sending diagrams to the public server.
 
 ```bash
+make          # show all commands and examples
 make up       # start all containers (detached)
 make down     # stop and remove containers
 make restart  # restart containers
-make          # show available commands
+make status   # show container status
+
+make render                        # render all diagrams in src/
+make render FILE=flow.puml         # render a single file
+make render DIR=./architecture     # render from a custom directory
+make render OUT=./docs/images      # render to a custom output directory
+make render DIR=./arch OUT=./out   # combine options
 ```
 
 The server starts on `http://localhost:8000`. The script checks it automatically on every run — no flags needed:

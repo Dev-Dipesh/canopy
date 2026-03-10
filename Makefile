@@ -1,10 +1,31 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help up down restart
+# Optional variables for the render target
+FILE ?=
+DIR  ?=
+OUT  ?=
+
+.PHONY: help render up down restart status
 
 help: ## Show available commands
+	@echo ""
+	@echo "Commands:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+	@echo ""
+	@echo "Examples:"
+	@echo "  make render                          render all diagrams in src/"
+	@echo "  make render FILE=flow.puml           render a single file"
+	@echo "  make render DIR=./architecture       render from a custom directory"
+	@echo "  make render OUT=./docs/images        render to a custom output directory"
+	@echo "  make render DIR=./arch OUT=./out     combine options"
+	@echo ""
+
+render: ## Render diagrams — FILE=, DIR=, OUT= are optional
+	node generate.cjs \
+		$(if $(FILE),$(FILE),) \
+		$(if $(DIR),-i $(DIR),) \
+		$(if $(OUT),-o $(OUT),)
 
 up: ## Start all Kroki containers in detached mode
 	docker compose up -d
@@ -14,3 +35,6 @@ down: ## Stop and remove all Kroki containers
 
 restart: ## Restart all Kroki containers in detached mode
 	docker compose restart
+
+status: ## Show Kroki container status
+	docker compose ps
