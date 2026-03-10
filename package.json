@@ -1,5 +1,5 @@
 {
-  "name": "diagram-render",
+  "name": "canopy",
   "private": true,
   "version": "1.0.0",
   "description": "Kroki-based multi-format diagram to PNG renderer — no runtime dependencies",
@@ -9,7 +9,7 @@
     "mcp": "node mcp.cjs"
   },
   "bin": {
-    "diagram-render-mcp": "./mcp.cjs"
+    "canopy-mcp": "./mcp.cjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.10.2"

@@ -1,4 +1,4 @@
-# diagram-render
+# Canopy
 
 Renders diagram source files to PNG/SVG using [Kroki](https://kroki.io). No runtime dependencies — uses only Node.js built-ins.
 
@@ -131,7 +131,7 @@ diagrams/
 ## Project structure
 
 ```
-diagram-render/
+canopy/
 ├── generate.cjs        # CLI renderer
 ├── mcp.cjs             # MCP server + HTTP preview server
 ├── lib/renderer.cjs    # shared rendering logic
@@ -207,7 +207,7 @@ The preview URL (e.g. `http://127.0.0.1:17432/a1b2c3`) opens directly in your br
 Add globally so it's available in every project:
 
 ```bash
-claude mcp add diagram-render -s user node /path/to/diagram-render/mcp.cjs
+claude mcp add canopy -s user node /path/to/canopy/mcp.cjs
 ```
 
 Or let Claude Code auto-discover it when you open this repo — `.mcp.json` is already included.
@@ -219,9 +219,9 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "diagram-render": {
+    "canopy": {
       "command": "node",
-      "args": ["/path/to/diagram-render/mcp.cjs"]
+      "args": ["/path/to/canopy/mcp.cjs"]
     }
   }
 }
@@ -235,4 +235,4 @@ Restart Claude Desktop after editing. The MCP server starts automatically when t
 
 - `diagrams/private/` and `src/private/` are gitignored — use them for sensitive diagrams.
 - Non-diagram code blocks in `.md` files are silently skipped.
-- Rendered images are saved to `~/.diagram-render/output/` and persist across reboots. The registry is persisted to `~/.diagram-render/registry.json` and reloaded on each server start, so preview URLs remain valid indefinitely as long as the image file exists on disk.
+- Rendered images are saved to `~/.canopy/output/` and persist across reboots. The registry is persisted to `~/.canopy/registry.json` and reloaded on each server start, so preview URLs remain valid indefinitely as long as the image file exists on disk.

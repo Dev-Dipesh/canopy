@@ -2,10 +2,10 @@
 /**
  * mcp.cjs
  * -------
- * MCP server exposing diagram-render as tools for AI apps (Claude Code, Claude Desktop).
+ * MCP server exposing Canopy as tools for AI apps (Claude Code, Claude Desktop).
  *
  * Runs over stdio — configure in your MCP client:
- *   { "command": "node", "args": ["/path/to/diagram-render/mcp.cjs"] }
+ *   { "command": "node", "args": ["/path/to/canopy/mcp.cjs"] }
  *
  * Tools:
  *   render_diagram       - Render diagram source text, returns a preview URL.
@@ -19,8 +19,8 @@
  *   Override start port: DIAGRAM_RENDER_HTTP_PORT env var.
  *
  * Persistent storage:
- *   Images default to ~/.diagram-render/output/<id>.<ext> — survives reboots.
- *   Registry persisted to ~/.diagram-render/registry.json — survives server restarts.
+ *   Images default to ~/.canopy/output/<id>.<ext> — survives reboots.
+ *   Registry persisted to ~/.canopy/registry.json — survives server restarts.
  *   Preview URLs remain valid as long as the image file exists on disk.
  *
  * Kroki server selection (non-interactive):
@@ -62,7 +62,8 @@ let httpPort = null;
 // Persistent storage paths
 // ---------------------------------------------------------------------------
 
-const HOME_DIR = path.join(os.homedir(), ".diagram-render");
+const LEGACY_HOME_DIR = path.join(os.homedir(), ".diagram-render");
+const HOME_DIR = path.join(os.homedir(), ".canopy");
 const OUTPUT_DIR = path.join(HOME_DIR, "output");
 const REGISTRY_FILE = path.join(HOME_DIR, "registry.json");
 
@@ -80,7 +81,7 @@ async function resolveKrokiUrl() {
 
 // ---------------------------------------------------------------------------
 // File registry — maps short IDs to rendered files for HTTP serving
-// Persisted to ~/.diagram-render/registry.json so URLs survive restarts.
+// Persisted to ~/.canopy/registry.json so URLs survive restarts.
 // ---------------------------------------------------------------------------
 
 /** id → { filePath, mimeType } */
@@ -94,9 +95,9 @@ function loadRegistry() {
     for (const [id, entry] of Object.entries(entries)) {
       fileRegistry.set(id, entry);
     }
-    process.stderr.write(`diagram-render: registry loaded (${fileRegistry.size} entries)\n`);
+    process.stderr.write(`canopy: registry loaded (${fileRegistry.size} entries)\n`);
   } catch {
-    process.stderr.write("diagram-render: could not read registry, starting fresh\n");
+    process.stderr.write("canopy: could not read registry, starting fresh\n");
   }
 }
 
@@ -121,7 +122,7 @@ function registerFile(filePath, mimeType) {
 }
 
 /**
- * Allocates a persistent output path under ~/.diagram-render/output/,
+ * Allocates a persistent output path under ~/.canopy/output/,
  * pre-registers it, and returns the file path and preview URL together.
  * The file doesn't exist yet — caller must write it before the URL is useful.
  *
@@ -229,7 +230,7 @@ function startHttpServer(startPort) {
       const srv = http.createServer(handler);
       srv.once("error", (err) => {
         if (err.code === "EADDRINUSE") {
-          process.stderr.write(`diagram-render: port ${port} in use, trying ${port + 1}\n`);
+          process.stderr.write(`canopy: port ${port} in use, trying ${port + 1}\n`);
           tryPort(port + 1);
         } else {
           reject(err);
@@ -237,7 +238,7 @@ function startHttpServer(startPort) {
       });
       srv.listen(port, "127.0.0.1", () => {
         httpPort = port;
-        process.stderr.write(`diagram-render HTTP server listening on http://127.0.0.1:${port}\n`);
+        process.stderr.write(`canopy HTTP server listening on http://127.0.0.1:${port}\n`);
         resolve();
       });
     };
@@ -249,7 +250,7 @@ function startHttpServer(startPort) {
 // MCP server
 // ---------------------------------------------------------------------------
 
-const server = new McpServer({ name: "diagram-render", version: "1.0.0" });
+const server = new McpServer({ name: "canopy", version: "1.0.0" });
 
 // ------ list_supported_types ------------------------------------------------
 
@@ -293,7 +294,7 @@ server.registerTool(
         "Kroki diagram type (e.g. plantuml, mermaid, graphviz, d2). Run list_supported_types for the full list.",
       ),
       output_path: z.string().optional().describe(
-        "Where to save the output image. If omitted, saves to ~/.diagram-render/output/ (persistent).",
+        "Where to save the output image. If omitted, saves to ~/.canopy/output/ (persistent).",
       ),
     }),
   },
@@ -359,7 +360,7 @@ server.registerTool(
         "Absolute path to the diagram source file (.puml, .mmd, .md, etc.).",
       ),
       output_dir: z.string().optional().describe(
-        "Directory to write the output image(s) to. Defaults to ~/.diagram-render/output/ (persistent).",
+        "Directory to write the output image(s) to. Defaults to ~/.canopy/output/ (persistent).",
       ),
     }),
   },
@@ -457,6 +458,9 @@ async function main() {
     process.env.DIAGRAM_RENDER_KROKI_URL = process.argv[idx + 1];
   }
 
+  // Migrate legacy data from ~/.diagram-render to ~/.canopy to preserve existing files/URLs.
+  migrateLegacyStorage();
+
   // Ensure persistent storage dirs exist and restore registry from last run
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   loadRegistry();
@@ -468,3 +472,47 @@ async function main() {
 }
 
 void main();
+
+/**
+ * Migrates persistent storage from the legacy ~/.diagram-render path to ~/.canopy.
+ * If both locations exist, it merges output files and registry entries without
+ * deleting user data.
+ */
+function migrateLegacyStorage() {
+  if (!fs.existsSync(LEGACY_HOME_DIR)) return;
+
+  fs.mkdirSync(HOME_DIR, { recursive: true });
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+
+  const legacyOutputDir = path.join(LEGACY_HOME_DIR, "output");
+  if (fs.existsSync(legacyOutputDir)) {
+    for (const name of fs.readdirSync(legacyOutputDir)) {
+      const from = path.join(legacyOutputDir, name);
+      const to = path.join(OUTPUT_DIR, name);
+      if (fs.existsSync(to)) continue;
+      try {
+        fs.renameSync(from, to);
+      } catch {
+        fs.copyFileSync(from, to);
+      }
+    }
+  }
+
+  const legacyRegistryFile = path.join(LEGACY_HOME_DIR, "registry.json");
+  if (fs.existsSync(legacyRegistryFile)) {
+    let legacyEntries = {};
+    let newEntries = {};
+    try {
+      legacyEntries = JSON.parse(fs.readFileSync(legacyRegistryFile, "utf8"));
+    } catch {}
+    if (fs.existsSync(REGISTRY_FILE)) {
+      try {
+        newEntries = JSON.parse(fs.readFileSync(REGISTRY_FILE, "utf8"));
+      } catch {}
+    }
+    const merged = { ...legacyEntries, ...newEntries };
+    fs.writeFileSync(REGISTRY_FILE, JSON.stringify(merged, null, 2), "utf8");
+  }
+
+  process.stderr.write("canopy: checked legacy storage migration\n");
+}

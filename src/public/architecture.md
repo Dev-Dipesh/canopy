@@ -32,7 +32,7 @@ package "CLI path" {
 package "MCP path" {
   component "mcp.cjs\n(stdio)" as mcp
   component "fileRegistry\n(Map id → filePath)\npersisted to registry.json" as reg
-  database "~/.diagram-render/\noutput/" as store
+  database "~/.canopy/\noutput/" as store
   component "HTTP :17432\n(file server)" as http
 }
 
@@ -64,7 +64,7 @@ sequenceDiagram
     actor Claude
     participant MCP as mcp.cjs
     participant Kroki as Kroki server
-    participant Store as ~/.diagram-render/output/
+    participant Store as ~/.canopy/output/
     participant Reg as fileRegistry (Map + registry.json)
     participant HTTP as HTTP :17432
 

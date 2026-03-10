@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "diagram-render": {
+    "canopy": {
       "command": "node",
       "args": ["mcp.cjs"]
     }

@@ -1,11 +1,11 @@
-# diagram-render
+# canopy
 
 Kroki-based multi-format diagram to PNG renderer. Zero runtime dependencies — uses only Node.js built-ins. Format is detected from the file extension.
 
 ## Project Structure
 
 ```txt
-diagram-render/
+canopy/
 ├── generate.cjs      # renderer script (entry point)
 ├── package.json
 ├── src/              # source diagrams (all supported formats)
