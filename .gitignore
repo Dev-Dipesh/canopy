@@ -1,6 +1,9 @@
 node_modules/
 package-lock.json
 
+# Claude Code worktrees and session data
+.claude/
+
 # Private diagrams — never committed
 src/private/
 diagrams/private/
