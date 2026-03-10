@@ -5,6 +5,13 @@
   "description": "Kroki-based multi-format diagram to PNG renderer — no runtime dependencies",
   "scripts": {
     "render": "node generate.cjs",
-    "render:one": "node generate.cjs"
+    "render:one": "node generate.cjs",
+    "mcp": "node mcp.cjs"
+  },
+  "bin": {
+    "diagram-render-mcp": "./mcp.cjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.10.2"
   }
 }
