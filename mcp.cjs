@@ -68,23 +68,33 @@ const REGISTRY_FILE = path.join(HOME_DIR, "registry.json");
 const PID_FILE = path.join(HOME_DIR, "server.pid");
 
 // ---------------------------------------------------------------------------
-// Singleton enforcement — kill any previous instance before starting
+// HTTP server ownership — tracks which process owns the HTTP listener.
+// Only the process that successfully binds writes the PID file.
+// Other instances piggyback on the existing server rather than killing it.
 // ---------------------------------------------------------------------------
 
-function killPreviousInstance() {
-  if (!fs.existsSync(PID_FILE)) return;
+/**
+ * Returns true if the PID file points to a live process other than this one,
+ * meaning another canopy instance already owns the HTTP server.
+ *
+ * @returns {boolean}
+ */
+function anotherInstanceOwnsHttpServer() {
+  if (!fs.existsSync(PID_FILE)) return false;
   try {
-    const oldPid = parseInt(fs.readFileSync(PID_FILE, "utf8").trim(), 10);
-    if (oldPid && oldPid !== process.pid) {
-      process.kill(oldPid, "SIGTERM");
-      process.stderr.write(`canopy: killed previous instance (pid ${oldPid})\n`);
-    }
+    const pid = parseInt(fs.readFileSync(PID_FILE, "utf8").trim(), 10);
+    if (!pid || pid === process.pid) return false;
+    process.kill(pid, 0); // throws ESRCH if process is dead
+    return true;
   } catch {
-    // Process already dead — that's fine
+    return false;
   }
-  fs.rmSync(PID_FILE, { force: true });
 }
 
+/**
+ * Writes this process's PID to the PID file and registers cleanup handlers
+ * so the file is removed when this process exits.
+ */
 function writePidFile() {
   fs.writeFileSync(PID_FILE, String(process.pid), "utf8");
   const cleanup = () => fs.rmSync(PID_FILE, { force: true });
@@ -191,7 +201,12 @@ function startHttpServer(port) {
     // GET /<id> — serve a previously rendered file
     if (req.method === "GET" && req.url && req.url.length > 1) {
       const id = req.url.slice(1);
-      const entry = fileRegistry.get(id);
+      let entry = fileRegistry.get(id);
+      if (!entry) {
+        // Another instance may have registered this ID — reload from disk.
+        loadRegistry();
+        entry = fileRegistry.get(id);
+      }
       if (!entry || !fs.existsSync(entry.filePath)) {
         res.writeHead(404, { "Content-Type": "text/plain" });
         res.end("Not found");
@@ -252,16 +267,26 @@ function startHttpServer(port) {
     const tryBind = () => {
       const srv = http.createServer(handler);
       srv.once("error", (err) => {
-        if (err.code === "EADDRINUSE" && attempts < 10) {
-          attempts++;
-          process.stderr.write(`canopy: port ${port} still in use, retrying (${attempts}/10)…\n`);
-          setTimeout(tryBind, 200);
-        } else {
-          reject(err);
+        if (err.code === "EADDRINUSE") {
+          if (anotherInstanceOwnsHttpServer()) {
+            // A live canopy process already owns the HTTP server — share its port.
+            httpPort = port;
+            process.stderr.write(`canopy: HTTP server already running on port ${port}, piggybacking\n`);
+            resolve();
+            return;
+          }
+          if (attempts < 10) {
+            attempts++;
+            process.stderr.write(`canopy: port ${port} still in use, retrying (${attempts}/10)…\n`);
+            setTimeout(tryBind, 200);
+            return;
+          }
         }
+        reject(err);
       });
       srv.listen(port, "127.0.0.1", () => {
         httpPort = port;
+        writePidFile();
         process.stderr.write(`canopy HTTP server listening on http://127.0.0.1:${port}\n`);
         resolve();
       });
@@ -484,8 +509,6 @@ async function main() {
 
   // Ensure persistent storage dirs exist and restore registry from last run
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
-  killPreviousInstance();
-  writePidFile();
   loadRegistry();
 
   await startHttpServer(HTTP_PORT_START);
