@@ -1,0 +1,88 @@
+# canopy
+
+Kroki-based multi-format diagram to PNG renderer. Zero runtime dependencies — uses only Node.js built-ins. Format is detected from the file extension.
+
+## Project Structure
+
+```txt
+canopy/
+├── generate.cjs      # renderer script (entry point)
+├── package.json
+├── src/              # source diagrams (all supported formats)
+└── diagrams/         # output PNGs (gitignored)
+```
+
+## Running
+
+```bash
+# Render all files in src/
+npm run render
+
+# Render a single file
+npm run render:one -- flow.puml
+
+# Custom input/output directories
+node generate.cjs -i ./architecture -o ./docs/images
+```
+
+Requires internet access — rendering is done via `https://kroki.io`.
+
+## Adding Diagrams
+
+Drop source files into `src/` (or any directory, using `-i`) and run `npm run render`. See README.md for the full list of supported extensions and how to add more.
+
+## Debugging
+
+### New diagram type renders fail with HTTP 400 and a PNG error image body
+
+Kroki returns error messages as rendered PNG images, not plain text. If a new diagram type fails with `HTTP 400` and the response body looks like binary PNG data, open the saved file (if any) or add temporary logging to read the error text — the actual error message is rendered inside the image.
+
+**Known root causes:**
+
+1. **Wrong output format.** Some Kroki types only support SVG, not PNG. Requesting PNG for them returns an error image with a message like `Unsupported output format: png for <type>. Must be one of svg`.
+   - Fix: add the type to `OUTPUT_FORMAT` in `generate.cjs` with `"svg"` as the value.
+   - Known SVG-only types already mapped: `d2`, `dbml`, `excalidraw`, `bpmn`, `bytefield`, `nomnoml`, `pikchr`, `svgbob`, `wavedrom`.
+   - If a new type fails, check https://kroki.io/#support for its supported output formats.
+
+2. **Wrong POST body encoding.** The Kroki POST endpoint expects the raw diagram source as plain text. Do not deflate/base64url-encode the body — that encoding is only for GET URL parameters. Sending encoded data to POST causes companions (especially JSON-based ones like Excalidraw) to reject the input.
+
+## Code Quality
+
+- Use JSDoc comments for any non-obvious functions.
+- Prefer descriptive variable names over abbreviations.
+- Keep functions focused — break anything >20 lines into smaller pieces where it makes sense.
+- No `eval()` or `Function()` constructor on any input.
+- Always handle errors explicitly; avoid swallowing them silently.
+- Remove unreachable or commented-out code before committing.
+
+## Linting
+
+No linter is configured by default. If one is added, prefer inline `// eslint-disable-next-line rule` over file-level disables for individual exceptions. File-level disables hide all future violations of that rule silently.
+
+## Commit Messages
+
+- No AI branding, attribution lines, or co-author footers.
+- Format: `type: short description` (conventional commits style).
+- Body is optional; use it only when the why isn't obvious from the subject.
+
+## Collaboration Safety
+
+- Do not remove files unless the user explicitly asks.
+- If cleanup is needed, list candidate files first and get confirmation before deleting.
+- `diagrams/*.png` is gitignored — never force-add generated output.
+
+## Multi-Agent Safety
+
+When multiple agents may be running concurrently:
+
+- Do not create, apply, or drop `git stash` entries unless explicitly requested.
+- Do not switch branches unless explicitly requested.
+- Do not create or remove `git worktree` checkouts unless explicitly requested.
+- When committing, scope to your own changes only. "Commit all" means commit everything in grouped chunks.
+- When you see unrecognized files, keep going — focus on your changes only.
+
+## Agent Behaviour
+
+- Respond with high-confidence answers only: verify in code before answering; do not guess.
+- Lint/format-only diffs: auto-resolve without asking. If a commit was already requested, include formatting fixes in the same commit or a small follow-up — no extra confirmation needed. Only ask when changes are semantic.
+- When finishing work on a GitHub Issue or PR, print the full URL at the end.
