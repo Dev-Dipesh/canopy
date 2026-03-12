@@ -150,11 +150,12 @@ function persistRegistry() {
  *
  * @param {string} filePath - Absolute path to the rendered file.
  * @param {string} mimeType - MIME type (image/png or image/svg+xml).
+ * @param {string|null} title - Optional human-readable title for gallery/search.
  * @returns {string} Preview URL.
  */
-function registerFile(filePath, mimeType) {
+function registerFile(filePath, mimeType, title = null) {
   const id = crypto.randomBytes(6).toString("hex");
-  fileRegistry.set(id, { filePath, mimeType });
+  fileRegistry.set(id, { filePath, mimeType, title, createdAt: new Date().toISOString() });
   persistRegistry();
   return `http://127.0.0.1:${httpPort}/${id}`;
 }
@@ -165,16 +166,135 @@ function registerFile(filePath, mimeType) {
  * The file doesn't exist yet — caller must write it before the URL is useful.
  *
  * @param {string} fmt - File extension without dot (e.g. "png", "svg").
+ * @param {string|null} title - Optional human-readable title for gallery/search.
  * @returns {{ filePath: string, previewUrl: string }}
  */
-function allocateOutput(fmt) {
+function allocateOutput(fmt, title = null) {
   const id = crypto.randomBytes(6).toString("hex");
   const mimeType = fmt === "svg" ? "image/svg+xml" : "image/png";
   const filePath = path.join(OUTPUT_DIR, `${id}.${fmt}`);
-  fileRegistry.set(id, { filePath, mimeType });
+  fileRegistry.set(id, { filePath, mimeType, title, createdAt: new Date().toISOString() });
   persistRegistry();
   return { filePath, previewUrl: `http://127.0.0.1:${httpPort}/${id}` };
 }
+
+// ---------------------------------------------------------------------------
+// Gallery HTML — served at GET / for browsing all rendered diagrams
+// ---------------------------------------------------------------------------
+
+const GALLERY_HTML = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Canopy Gallery</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;background:#1c1c1e;color:#e0e0e0;min-height:100vh}
+header{background:#2c2c2e;padding:14px 20px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10;box-shadow:0 1px 0 rgba(255,255,255,.08)}
+h1{font-size:17px;font-weight:700;color:#fff;white-space:nowrap}
+#search{flex:1;max-width:360px;background:#3a3a3c;border:1px solid #4a4a4c;color:#e0e0e0;padding:7px 12px;border-radius:8px;font-size:13px;outline:none}
+#search:focus{border-color:#888}
+#search::placeholder{color:#888}
+#count{font-size:12px;color:#888;white-space:nowrap;margin-left:auto}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;padding:20px}
+.card{background:#2c2c2e;border-radius:10px;overflow:hidden;cursor:pointer;transition:transform .15s,box-shadow .15s;border:1px solid transparent}
+.card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.5);border-color:#4a4a4c}
+.thumb{width:100%;aspect-ratio:16/9;object-fit:contain;background:#111;display:block}
+.info{padding:10px 12px 12px}
+.title{font-size:13px;font-weight:600;color:#e0e0e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:5px}
+.meta{display:flex;align-items:center;gap:6px;font-size:11px;color:#888}
+.badge{background:#3a3a3c;border:1px solid #555;padding:1px 6px;border-radius:4px;text-transform:uppercase;font-size:10px;letter-spacing:.4px}
+.empty{text-align:center;padding:80px 20px;color:#555;font-size:14px}
+.lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:100;flex-direction:column;align-items:center;justify-content:center}
+.lb.open{display:flex}
+.lb img{max-width:88vw;max-height:80vh;border-radius:6px;object-fit:contain}
+.lb-bar{position:fixed;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:12px 18px;background:rgba(0,0,0,.6)}
+.lb-title{font-size:14px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60vw}
+.lb-meta{font-size:12px;color:#999}
+.lb-close{font-size:22px;cursor:pointer;color:#aaa;line-height:1;padding:4px;margin-left:16px}
+.lb-close:hover{color:#fff}
+.lb-nav{position:fixed;top:50%;transform:translateY(-50%);font-size:36px;cursor:pointer;color:#aaa;padding:16px;user-select:none;line-height:1}
+.lb-nav:hover{color:#fff}
+#lb-prev{left:8px}
+#lb-next{right:8px}
+.lb-open-link{position:fixed;bottom:18px;font-size:12px;color:#888;text-decoration:none}
+.lb-open-link:hover{color:#ccc}
+</style>
+</head>
+<body>
+<header>
+  <h1>Canopy</h1>
+  <input id="search" type="search" placeholder="Search diagrams…">
+  <span id="count"></span>
+</header>
+<div class="grid" id="grid"></div>
+<div class="empty" id="empty" style="display:none">No diagrams found.</div>
+<div class="lb" id="lb">
+  <div class="lb-bar">
+    <span class="lb-title" id="lb-title"></span>
+    <span class="lb-meta" id="lb-meta"></span>
+    <span class="lb-close" id="lb-close">✕</span>
+  </div>
+  <span class="lb-nav" id="lb-prev">&#8249;</span>
+  <img id="lb-img" src="" alt="">
+  <span class="lb-nav" id="lb-next">&#8250;</span>
+  <a class="lb-open-link" id="lb-open" href="" target="_blank">Open full size ↗</a>
+</div>
+<script>
+const ALL = DIAGRAMS_JSON;
+let filtered = ALL.slice();
+let idx = 0;
+
+function fmt(p){ return (p||'').split('.').pop().toUpperCase() }
+function fmtDate(s){ return s ? new Date(s).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'}) : '' }
+
+function renderGrid(list){
+  const g=document.getElementById('grid'), e=document.getElementById('empty'), c=document.getElementById('count');
+  c.textContent = list.length + ' diagram'+(list.length!==1?'s':'');
+  if(!list.length){ g.innerHTML=''; e.style.display=''; return }
+  e.style.display='none';
+  g.innerHTML=list.map((d,i)=>\`
+    <div class="card" data-i="\${i}">
+      <img class="thumb" src="/\${d.id}" loading="lazy" alt="\${d.title||''}">
+      <div class="info">
+        <div class="title">\${d.title||'(untitled)'}</div>
+        <div class="meta"><span class="badge">\${fmt(d.filePath)}</span>\${d.createdAt?\`<span>\${fmtDate(d.createdAt)}</span>\`:''}</div>
+      </div>
+    </div>\`).join('');
+  g.querySelectorAll('.card').forEach(el=>el.addEventListener('click',()=>open(+el.dataset.i)));
+}
+
+function open(i){
+  idx=i; const d=filtered[i];
+  document.getElementById('lb-img').src='/'+d.id;
+  document.getElementById('lb-open').href='/'+d.id;
+  document.getElementById('lb-title').textContent=d.title||'(untitled)';
+  document.getElementById('lb-meta').textContent=[fmt(d.filePath),fmtDate(d.createdAt)].filter(Boolean).join(' · ');
+  document.getElementById('lb').classList.add('open');
+}
+function close(){ document.getElementById('lb').classList.remove('open') }
+function nav(d){ open((idx+d+filtered.length)%filtered.length) }
+
+document.getElementById('lb-close').addEventListener('click',close);
+document.getElementById('lb-prev').addEventListener('click',()=>nav(-1));
+document.getElementById('lb-next').addEventListener('click',()=>nav(1));
+document.getElementById('search').addEventListener('input',function(){
+  const q=this.value.toLowerCase();
+  filtered=ALL.filter(d=>!q||(d.title||'').toLowerCase().includes(q));
+  renderGrid(filtered);
+});
+document.addEventListener('keydown',e=>{
+  if(!document.getElementById('lb').classList.contains('open'))return;
+  if(e.key==='Escape')close();
+  if(e.key==='ArrowLeft')nav(-1);
+  if(e.key==='ArrowRight')nav(1);
+});
+
+renderGrid(filtered);
+</script>
+</body>
+</html>`;
 
 // ---------------------------------------------------------------------------
 // HTTP server — serves registered files + direct render endpoint
@@ -197,6 +317,19 @@ function startHttpServer(port) {
     if (req.method === "OPTIONS") {
       res.writeHead(204);
       res.end();
+      return;
+    }
+
+    // GET / — gallery page listing all rendered diagrams
+    if (req.method === "GET" && req.url === "/") {
+      loadRegistry();
+      const diagrams = [...fileRegistry.entries()]
+        .filter(([, entry]) => fs.existsSync(entry.filePath))
+        .map(([id, entry]) => ({ id, title: entry.title ?? null, filePath: entry.filePath, createdAt: entry.createdAt ?? null }))
+        .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+      const html = GALLERY_HTML.replace("DIAGRAMS_JSON", JSON.stringify(diagrams));
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(html);
       return;
     }
 
@@ -483,6 +616,39 @@ server.registerTool(
   }),
 );
 
+// ------ search_diagrams -----------------------------------------------------
+
+server.registerTool(
+  "search_diagrams",
+  {
+    description:
+      "Search previously rendered diagrams by title keyword across all sessions. " +
+      "Returns matching diagrams with preview URLs.",
+    inputSchema: z.object({
+      query: z.string().describe("Keyword to search in diagram titles."),
+    }),
+  },
+  async ({ query }) => {
+    loadRegistry();
+    const q = query.toLowerCase();
+    const results = [...fileRegistry.entries()]
+      .filter(([, entry]) => entry.title?.toLowerCase().includes(q))
+      .filter(([, entry]) => fs.existsSync(entry.filePath))
+      .map(([id, entry]) => ({
+        id,
+        title: entry.title,
+        previewUrl: `http://127.0.0.1:${httpPort}/${id}`,
+        createdAt: entry.createdAt ?? null,
+      }))
+      .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
+
+    if (results.length === 0) {
+      return { content: [{ type: "text", text: `No diagrams found matching "${query}".` }] };
+    }
+    return { content: [{ type: "text", text: JSON.stringify(results, null, 2) }] };
+  },
+);
+
 // ------ list_supported_types ------------------------------------------------
 
 server.registerTool(
@@ -524,12 +690,15 @@ server.registerTool(
       type: z.string().describe(
         "Kroki diagram type (e.g. plantuml, mermaid, graphviz, d2). Run list_supported_types for the full list.",
       ),
+      title: z.string().optional().describe(
+        "Short descriptive title for this diagram (stored for gallery and search).",
+      ),
       output_path: z.string().optional().describe(
         "Where to save the output image. If omitted, saves to ~/.canopy/output/ (persistent).",
       ),
     }),
   },
-  async ({ source, type: diagramType, output_path }) => {
+  async ({ source, type: diagramType, title, output_path }) => {
     const fmt = OUTPUT_FORMAT[diagramType] ?? "png";
     const mimeType = fmt === "svg" ? "image/svg+xml" : "image/png";
 
@@ -543,10 +712,10 @@ server.registerTool(
         fs.mkdirSync(path.dirname(outputPath), { recursive: true });
         // Will register after render succeeds
       } catch {
-        ({ filePath: outputPath, previewUrl } = allocateOutput(fmt));
+        ({ filePath: outputPath, previewUrl } = allocateOutput(fmt, title ?? null));
       }
     } else {
-      ({ filePath: outputPath, previewUrl } = allocateOutput(fmt));
+      ({ filePath: outputPath, previewUrl } = allocateOutput(fmt, title ?? null));
     }
 
     const krokiUrl = await resolveKrokiUrl();
@@ -555,7 +724,7 @@ server.registerTool(
       const data = await krokiRender(source, diagramType, krokiUrl);
       fs.writeFileSync(outputPath, data);
       // Register user-provided path now that the file exists
-      if (!previewUrl) previewUrl = registerFile(outputPath, mimeType);
+      if (!previewUrl) previewUrl = registerFile(outputPath, mimeType, title ?? null);
       return {
         content: [
           {
@@ -564,6 +733,7 @@ server.registerTool(
               `Rendered ${diagramType} diagram (${fmt}).\n\n` +
               `Share this URL with the user so they can open it in their browser:\n` +
               `${previewUrl}\n\n` +
+              `Gallery (all diagrams): http://127.0.0.1:${httpPort}/\n` +
               `(File saved at: ${outputPath})`,
           },
         ],
@@ -590,12 +760,15 @@ server.registerTool(
       file_path: z.string().describe(
         "Absolute path to the diagram source file (.puml, .mmd, .md, etc.).",
       ),
+      title: z.string().optional().describe(
+        "Short descriptive title for this diagram (stored for gallery and search). Defaults to the source filename.",
+      ),
       output_dir: z.string().optional().describe(
         "Directory to write the output image(s) to. Defaults to ~/.canopy/output/ (persistent).",
       ),
     }),
   },
-  async ({ file_path, output_dir }) => {
+  async ({ file_path, title, output_dir }) => {
     const resolvedInput = path.resolve(file_path);
 
     if (!fs.existsSync(resolvedInput)) {
@@ -635,10 +808,13 @@ server.registerTool(
       if (ext === ".md") {
         const result = await renderMarkdownFile(resolvedInput, outDir, krokiUrl);
         const validPaths = result.outputs.filter(Boolean);
+        const mdBase = path.basename(resolvedInput, ".md");
         const lines = validPaths.map((p) => {
           const fmt = path.extname(p).slice(1);
           const mime = fmt === "svg" ? "image/svg+xml" : "image/png";
-          const url = registerFile(p, mime);
+          const blockName = path.basename(p, `.${fmt}`);
+          const entryTitle = title ? `${title} — ${blockName}` : `${mdBase} — ${blockName}`;
+          const url = registerFile(p, mime, entryTitle);
           return `  ${path.basename(p)}  →  ${url}`;
         });
         const summary =
@@ -656,7 +832,8 @@ server.registerTool(
         const source = fs.readFileSync(resolvedInput, "utf8");
         const data = await krokiRender(source, diagramType, krokiUrl);
         fs.writeFileSync(outputPath, data);
-        const previewUrl = registerFile(outputPath, mimeType);
+        const fileTitle = title ?? path.basename(resolvedInput, ext);
+        const previewUrl = registerFile(outputPath, mimeType, fileTitle);
         return {
           content: [
             {
@@ -665,6 +842,7 @@ server.registerTool(
                 `Rendered ${diagramType} (${fmt}).\n\n` +
                 `Share this URL with the user so they can open it in their browser:\n` +
                 `${previewUrl}\n\n` +
+                `Gallery (all diagrams): http://127.0.0.1:${httpPort}/\n` +
                 `(File saved at: ${outputPath})`,
             },
           ],
