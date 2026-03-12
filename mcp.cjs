@@ -38,6 +38,7 @@
 
 "use strict";
 
+const { exec } = require("node:child_process");
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
@@ -64,6 +65,9 @@ const HTTP_PORT_START = parseInt(process.env.DIAGRAM_RENDER_HTTP_PORT ?? "17432"
 
 /** Actual bound port — set by startHttpServer(), used by registerFile(). */
 let httpPort = null;
+
+/** Reference to the HTTP server — used to close it gracefully on SIGTERM. */
+let httpServer = null;
 
 /**
  * Version token for this running instance — derived from this file's mtime.
@@ -115,13 +119,29 @@ function readHttpServerOwner() {
 /**
  * Writes this process's PID and version to the PID file and registers cleanup
  * handlers so the file is removed when this process exits.
+ *
+ * On SIGTERM/SIGINT the HTTP server is closed first so the port is guaranteed
+ * free before the PID file disappears — preventing a race where a new instance
+ * sees no PID file but still can't bind.
  */
 function writePidFile() {
   fs.writeFileSync(PID_FILE, JSON.stringify({ pid: process.pid, version: SERVER_VERSION }), "utf8");
   const cleanup = () => fs.rmSync(PID_FILE, { force: true });
   process.once("exit", cleanup);
-  process.once("SIGTERM", () => { cleanup(); process.exit(0); });
-  process.once("SIGINT", () => { cleanup(); process.exit(0); });
+
+  const gracefulExit = () => {
+    if (httpServer) {
+      // Close server first; remove PID file only after port is fully released.
+      httpServer.close(() => { cleanup(); process.exit(0); });
+      // Force exit after 2 s in case keep-alive connections linger.
+      setTimeout(() => { cleanup(); process.exit(0); }, 2000).unref();
+    } else {
+      cleanup();
+      process.exit(0);
+    }
+  };
+  process.once("SIGTERM", gracefulExit);
+  process.once("SIGINT", gracefulExit);
 }
 
 // ---------------------------------------------------------------------------
@@ -352,6 +372,33 @@ if(focusId){ const i=filtered.findIndex(d=>d.id===focusId); if(i!==-1) open(i); 
 // ---------------------------------------------------------------------------
 
 /**
+ * Sends SIGTERM to every process currently listening on the given TCP port,
+ * using lsof. Used as a last resort when the PID file is absent or stale.
+ * Resolves to true if at least one process was found and signaled.
+ *
+ * @param {number} port
+ * @returns {Promise<boolean>}
+ */
+function killPortOwner(port) {
+  return new Promise((resolve) => {
+    exec(`lsof -ti tcp:${port}`, (err, stdout) => {
+      if (err || !stdout.trim()) { resolve(false); return; }
+      const pids = stdout.trim().split("\n")
+        .map(Number)
+        .filter((p) => p && p !== process.pid);
+      if (pids.length === 0) { resolve(false); return; }
+      for (const pid of pids) {
+        try {
+          process.kill(pid, "SIGTERM");
+          process.stderr.write(`canopy: sent SIGTERM to stale port ${port} owner (pid ${pid})\n`);
+        } catch { /* already gone */ }
+      }
+      resolve(true);
+    });
+  });
+}
+
+/**
  * Binds the HTTP server to a fixed port, retrying on EADDRINUSE (e.g. while
  * the previous instance is still releasing the port after SIGTERM).
  * Never increments the port — stable port = stable URLs.
@@ -471,6 +518,7 @@ function startHttpServer(port) {
 
   return new Promise((resolve, reject) => {
     let attempts = 0;
+    let killedByLsof = false;
     const tryBind = () => {
       const srv = http.createServer(handler);
       srv.once("error", (err) => {
@@ -489,10 +537,25 @@ function startHttpServer(port) {
             try { process.kill(owner.pid, "SIGTERM"); } catch { /* already gone */ }
             // Fall through to retry loop — wait for the port to be released.
           }
-          if (attempts < 10) {
+          if (attempts < 15) {
             attempts++;
-            process.stderr.write(`canopy: port ${port} still in use, retrying (${attempts}/10)…\n`);
-            setTimeout(tryBind, 200);
+            process.stderr.write(`canopy: port ${port} still in use, retrying (${attempts}/15)…\n`);
+            setTimeout(tryBind, 300);
+            return;
+          }
+          // All retries exhausted and no PID file owner found —
+          // use lsof to force-kill whatever is holding the port (once).
+          if (!killedByLsof) {
+            killedByLsof = true;
+            killPortOwner(port).then((killed) => {
+              if (killed) {
+                attempts = 0;
+                process.stderr.write(`canopy: waiting for port ${port} to clear after force-kill…\n`);
+                setTimeout(tryBind, 500);
+              } else {
+                reject(err);
+              }
+            });
             return;
           }
         }
@@ -500,6 +563,7 @@ function startHttpServer(port) {
       });
       srv.listen(port, "127.0.0.1", () => {
         httpPort = port;
+        httpServer = srv;
         writePidFile();
         process.stderr.write(`canopy HTTP server listening on http://127.0.0.1:${port}\n`);
         resolve();
