@@ -21,7 +21,7 @@ skinparam NoteBorderColor #BBBB00
 top to bottom direction
 
 actor "Developer" as dev
-actor "Claude" as ai
+actor "Claude AI" as ai
 
 package "CLI path" {
   database "src/" as src
@@ -33,7 +33,12 @@ package "MCP path" {
   component "mcp.cjs\n(stdio)" as mcp
   component "fileRegistry\n(Map id → filePath)\npersisted to registry.json" as reg
   database "~/.canopy/\noutput/" as store
-  component "HTTP :17432\n(file server)" as http
+  component "HTTP :17432\n(gallery server)" as http
+}
+
+package "Claude Desktop" {
+  component "Chat response\n(Preview URL)" as chat
+  component "Inline widget\n(iframe · App client)" as widget
 }
 
 cloud "Kroki" as kroki {
@@ -53,8 +58,12 @@ ai --> mcp : render_diagram()\nrender_file()
 mcp --> local : POST source
 mcp --> store : save <id>.<ext>
 mcp --> reg : store (id, path)
+mcp --> ai : Preview URL\n+ structuredContent {imageId}
+ai --> chat : clickable link
 reg ..> http : serves file
-mcp --> ai : Preview URL\nhttp://127.0.0.1:17432/<id>
+
+widget ..> mcp : get_diagram_image(id)\n[App client, no LLM cost]
+mcp ..> widget : base64 bytes
 @enduml
 ```
 
@@ -67,16 +76,25 @@ sequenceDiagram
     participant Store as ~/.canopy/output/
     participant Reg as fileRegistry (Map + registry.json)
     participant HTTP as HTTP :17432
+    participant Widget as Inline widget (iframe)
 
     Claude->>MCP: render_diagram(source, type)
     MCP->>Kroki: POST /plantuml/png
     Kroki-->>MCP: PNG bytes
     MCP->>Store: write <id>.png
     MCP->>Reg: set(id, {filePath, mimeType}) + persist to disk
-    MCP-->>Claude: Preview URL http://127.0.0.1:17432/<id>
-    Claude-->>User: shares URL as clickable link
-    User->>HTTP: GET /<id>
-    HTTP->>Reg: get(id)
-    Reg-->>HTTP: {filePath, mimeType}
+    MCP-->>Claude: structuredContent {imageId} + Preview URL
+
+    Claude-->>User: shares Preview URL as clickable link
+
+    Note over Claude,Widget: Claude Desktop renders inline widget
+    Widget->>MCP: get_diagram_image(id) via App client
+    MCP->>Reg: get(id) → filePath
+    MCP->>Store: read <id>.png
+    MCP-->>Widget: base64 image bytes
+    Widget-->>User: diagram appears in chat widget
+
+    User->>HTTP: GET /<id> (via Preview URL in browser)
+    HTTP->>Reg: get(id) → filePath
     HTTP-->>User: PNG bytes
 ```

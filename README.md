@@ -1,6 +1,22 @@
 # Canopy
 
-Renders diagram source files to PNG/SVG using [Kroki](https://kroki.io). No runtime dependencies — uses only Node.js built-ins.
+Renders diagram source files to PNG/SVG using [Kroki](https://kroki.io) and serves them as inline previews directly inside Claude Desktop chat. No runtime dependencies — uses only Node.js built-ins.
+
+| ![Inline diagram preview in Claude Desktop](diagrams/public/live-preview-in-chat.png) | ![Gallery: browse all rendered diagrams](diagrams/public/gallery-view.png) |
+|---|---|
+| *Inline preview in Claude Desktop chat* | *Gallery — browse and manage all diagrams* |
+
+## Why this exists
+
+Every AI model (Claude, GPT, Gemini) only supports live preview of a single diagram syntax. That's extremely limiting for both simple and complex diagrams — you end up:
+
+- Asking the AI to regenerate the same diagram in a different language just to preview it
+- Copying source into external sites (Mermaid Live, PlantUML online, etc.) to render it
+- Going back and forth between the diagram and explanations, losing context
+- Pasting diagram source into third-party services, which is a data leak risk
+- Constantly re-explaining which format to use and how to style it
+
+Canopy solves this by giving the AI a single rendering tool that handles **27 diagram formats**, enforces a consistent visual style guide automatically, and shows the result inline in chat — no copy-paste, no external sites, no context switching.
 
 ![Architecture overview](diagrams/public/architecture/overview.png)
 
@@ -135,6 +151,10 @@ canopy/
 ├── generate.cjs        # CLI renderer
 ├── mcp.cjs             # MCP server + HTTP preview server
 ├── lib/renderer.cjs    # shared rendering logic
+├── src/mcp-app.html    # App client entry point (Vite source)
+├── src/mcp-app.js      # App client logic (Vite source)
+├── vite.config.mjs     # Vite build config (vite-plugin-singlefile)
+├── dist/               # built App client (gitignored — run npm run build:ui)
 ├── Makefile
 ├── docker-compose.yml
 ├── src/
@@ -188,20 +208,23 @@ Containers started by `docker-compose.yml`:
 
 ## MCP server
 
-The MCP server exposes diagram rendering as AI tools. It starts an HTTP file server on a fixed port 17432 alongside the MCP stdio transport.
+The MCP server exposes diagram rendering as AI tools. It starts an HTTP file server on port 17432 alongside the MCP stdio transport. In Claude Desktop, rendered diagrams appear inline in the chat widget — no URL to open.
 
-![MCP tool call flow](diagrams/public/architecture/mcp-flow.png?v=2)
+![MCP tool call flow](diagrams/public/architecture/mcp-flow.png)
 
 **Available tools:**
 
 | Tool | Description |
 |------|-------------|
 | `get_diagram_preferences` | Returns the format selection rules and visual style guide |
-| `render_diagram` | Render diagram source text → returns a preview URL |
-| `render_file` | Render a source file from disk → returns preview URL(s) |
+| `render_diagram` | Render diagram source text → inline preview + browser URL |
+| `render_file` | Render a source file from disk → preview URL(s) |
 | `list_supported_types` | List all supported Kroki types and extensions |
+| `search_diagrams` | Search previously rendered diagrams by title keyword |
+| `rename_diagram` | Rename a diagram in the registry by ID |
+| `delete_diagram` | Delete a diagram from the registry and disk by ID |
 
-The preview URL (e.g. `http://127.0.0.1:17432/a1b2c3`) opens directly in your browser.
+The preview URL (e.g. `http://127.0.0.1:17432/?id=a1b2c3`) also opens in your browser via the gallery.
 
 ### Claude Code
 
@@ -238,3 +261,5 @@ Restart Claude Desktop after editing. The MCP server starts automatically when t
 - Non-diagram code blocks in `.md` files are silently skipped.
 - Rendered images are saved to `~/.canopy/output/` and persist across reboots. The registry is persisted to `~/.canopy/registry.json` and reloaded on each server start, so preview URLs remain valid indefinitely as long as the image file exists on disk.
 - The MCP server ships a built-in diagram style guide (format selection rules, color system, layout defaults) injected automatically into supporting clients. To override or extend it, create `~/.canopy/preferences.md` — its contents are appended under a `USER PREFERENCES` section on every server start. In Claude Desktop, call `get_diagram_preferences` at the start of a chat to load the style guide manually.
+- **Claude Desktop inline preview** uses the MCP Apps (`@modelcontextprotocol/ext-apps`) protocol. The App client is pre-built into `dist/src/mcp-app.html` via Vite. If you modify `src/mcp-app.js` or `src/mcp-app.html`, rebuild before restarting Claude Desktop: `npm run build:ui`.
+- The Mermaid container (`yuzutech/kroki-mermaid`) is not started by default — only the core Kroki container is. Run `make up` to start all containers including Mermaid, BPMN, BlockDiag, etc.
