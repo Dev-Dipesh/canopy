@@ -775,7 +775,7 @@ Legend rules:
 Self-sustaining diagram rules:
 - the diagram should stand on its own without requiring the reader to inspect source code
 - avoid file paths, repo folders, route names, and implementation filenames unless explicitly requested
-- avoid labels like `foo.ts`, `/api/bar`, `lib/x`, or regex-like identifiers in public-facing diagrams
+- avoid labels like "foo.ts", "/api/bar", "lib/x", or regex-like identifiers in public-facing diagrams
 - prefer architecture meaning over code provenance
 - if a node is non-obvious, explain it with a short subtitle in the node or a compact legend row
 - include code-level names only when the user explicitly wants implementation mapping or when source attribution is the point of the diagram
@@ -933,8 +933,8 @@ Safe structure that renders reliably:
 - optional legend right
 - optional stereotypes like <<Agent>>
 - left to right direction for most architecture/runtime diagrams
-- optional `skinparam rectangle { BorderThickness 1 }`
-- optional `skinparam package { BorderThickness 2 }`
+- optional \`skinparam rectangle { BorderThickness 1 }\`
+- optional \`skinparam package { BorderThickness 2 }\`
 
 Preferred node patterns:
 - rectangle \"Planner\" <<Agent>> as planner #B2EBF2
@@ -948,16 +948,16 @@ PlantUML reliability rules:
 - keep legends compact
 - keep labels short
 - keep one main spine with a few side branches
-- prefer plain color literals like `#FFF9C4` over advanced inline style syntax
+- prefer plain color literals like \`#FFF9C4\` over advanced inline style syntax
 - prefer simple labels over markup-heavy labels
 - if the diagram is explanatory, put the explanation in the node text or legend, not in code-level footnotes
 - when a node needs more context, use one short subtitle line rather than a long note block
 - if a diagram is meant for understanding rather than implementation lookup, bias toward plain English labels
 
 PlantUML syntax safety rules:
-- avoid semicolon-based inline style fragments such as `#color;line:...;text:...` unless already proven to work in the current renderer
+- avoid semicolon-based inline style fragments such as \`#color;line:...;text:...\` unless already proven to work in the current renderer
 - avoid features that differ across PlantUML versions unless necessary
-- avoid `skinparam handwritten true`; use `!option handwritten true` only when handwritten mode is explicitly wanted
+- avoid \`skinparam handwritten true\`; use \`!option handwritten true\` only when handwritten mode is explicitly wanted
 - avoid bracket-heavy labels and code-like syntax when natural language works
 - avoid large note blocks when a compact legend or subtitle will do
 - after a syntax failure, simplify toward rectangles, packages, simple arrows, and plain color literals
@@ -1019,22 +1019,22 @@ If the pipeline starts to branch heavily, switch to PlantUML.
 
 D2 syntax safety rules:
 - prefer a small, conservative subset of D2 syntax
-- use direct style properties such as `font-size`, `font-color`, and `bold`
-- do not use nested font objects like `font: { family: ..., size: ..., bold: ... }`
-- do not use `color` when the intent is text color; use `font-color`
+- use direct style properties such as \`font-size\`, \`font-color\`, and \`bold\`
+- do not use nested font objects like \`font: { family: ..., size: ..., bold: ... }\`
+- do not use \`color\` when the intent is text color; use \`font-color\`
 - do not assume font-family is supported in D2 style blocks
 - if a D2 diagram fails to render, simplify toward direct nodes, containers, direct arrows, and flat style properties
 
 Safe D2 style examples:
-- `font-size: 18`
-- `font-color: "#333333"`
-- `bold: true`
-- `border-radius: 10`
-- `shadow: false`
+- \`font-size: 18\`
+- \`font-color: "#333333"\`
+- \`bold: true\`
+- \`border-radius: 10\`
+- \`shadow: false\`
 
 Avoid in D2 unless already proven locally:
-- `font: { family: "Arial", size: 18, bold: true }`
-- `color: "#333333"` for text color
+- \`font: { family: "Arial", size: 18, bold: true }\`
+- \`color: "#333333"\` for text color
 - complex variable indirection when a literal works
 
 ---
