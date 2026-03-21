@@ -1519,7 +1519,7 @@ server.registerTool(
         // structuredContent is consumed by UI-capable clients (e.g. Claude Desktop).
         // imageId is fetched by the App client via app.callServerTool("get_diagram_image")
         // — no HTTP request from the iframe, no LLM token cost.
-        structuredContent: { imageId, title: title ?? null },
+        structuredContent: { imageId, title: title ?? null, previewUrl },
       };
     } catch (err) {
       return {
