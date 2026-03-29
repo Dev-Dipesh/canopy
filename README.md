@@ -20,10 +20,32 @@ Canopy solves this by giving the AI a single rendering tool that handles **27 di
 
 ![Architecture overview](diagrams/public/architecture/overview.png)
 
-Two usage modes:
+Three usage modes:
 
 - **CLI** — drop source files into `src/`, run `make render`, get images in `diagrams/`
 - **MCP server** — AI tools (`render_diagram`, `render_file`) render on demand and return a one-click preview URL
+- **Web editor** — browser-based diagram editor with live preview, all 27 formats, export, and dark mode
+
+---
+
+## Web editor
+
+A browser-based diagram editor backed by your local Kroki instance. Edit any of the 27 supported diagram formats with syntax highlighting, live preview, and export — no external services needed.
+
+![Canopy Web editor](diagrams/public/canopy-web-preview.png)
+
+**Features:** CodeMirror 6 editor with language-aware highlighting · auto-render with 600ms debounce · resizable split panes · dark/light/system theme · full-screen pan/zoom/pinch preview · save-as with OS file picker · copy to clipboard · per-type source persistence · Kroki error messages displayed in preview with clickable line numbers
+
+```bash
+# Docker (recommended) — runs alongside Kroki
+make up                          # start Kroki containers
+docker compose up -d --build web # build and start canopy-web
+# → http://localhost:11274
+
+# Dev server (requires Kroki at localhost:8000)
+cd canopy-web && npm install && npm run dev
+# → http://localhost:11274
+```
 
 ---
 
@@ -155,6 +177,7 @@ canopy/
 ├── src/mcp-app.js      # App client logic (Vite source)
 ├── vite.config.mjs     # Vite build config (vite-plugin-singlefile)
 ├── dist/               # built App client (gitignored — run npm run build:ui)
+├── canopy-web/         # browser-based diagram editor (React + Vite)
 ├── Makefile
 ├── docker-compose.yml
 ├── src/
@@ -203,6 +226,7 @@ Containers started by `docker-compose.yml`:
 | `bpmn`       | yuzutech/kroki-bpmn         | BPMN                                                       |
 | `excalidraw` | yuzutech/kroki-excalidraw   | Excalidraw                                                 |
 | `wireviz`    | yuzutech/kroki-wireviz      | WireViz                                                    |
+| `web`        | canopy-web (local build)    | Browser-based diagram editor (port 11274)                  |
 
 ---
 

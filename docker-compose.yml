@@ -42,3 +42,11 @@ services:
     image: yuzutech/kroki-wireviz
     expose:
       - "8005"
+
+  web:
+    build:
+      context: ./canopy-web
+    ports:
+      - "11274:80"
+    depends_on:
+      - core

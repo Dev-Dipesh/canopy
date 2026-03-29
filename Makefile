@@ -5,7 +5,7 @@ FILE ?=
 DIR  ?=
 OUT  ?=
 
-.PHONY: help render up down restart status
+.PHONY: help render up down restart status web web-build
 
 help: ## Show available commands
 	@echo ""
@@ -38,3 +38,9 @@ restart: ## Restart all Kroki containers in detached mode
 
 status: ## Show Kroki container status
 	docker compose ps
+
+web: ## Start canopy-web dev server (port 11274)
+	cd canopy-web && npm run dev
+
+web-build: ## Build canopy-web for production
+	cd canopy-web && npm run build
