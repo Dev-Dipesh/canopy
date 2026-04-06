@@ -4,6 +4,7 @@ export type DiagramType =
   | "mermaid"
   | "graphviz"
   | "d2"
+  | "d2-elk"
   | "dbml"
   | "ditaa"
   | "erd"

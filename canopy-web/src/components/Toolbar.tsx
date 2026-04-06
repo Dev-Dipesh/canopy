@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { DiagramType, OutputFormat } from "../types";
 import { DIAGRAM_TYPES, OUTPUT_FORMAT } from "../constants";
-import { saveAs, copyToClipboard } from "../lib/export";
+import { saveAs, copyToClipboard, svgToPngBlob } from "../lib/export";
 
 interface ToolbarProps {
   type: DiagramType;
@@ -42,20 +42,34 @@ export function Toolbar({
 
   const format: OutputFormat = OUTPUT_FORMAT[type] ?? "png";
 
-  const handleSave = async () => {
+  const handleSave = async (asFormat?: OutputFormat) => {
     if (!resultBlob) return;
     setExportOpen(false);
-    await saveAs(resultBlob, `diagram.${resultFormat ?? format}`);
+    const targetFormat = asFormat ?? resultFormat ?? format;
+    const blob =
+      targetFormat === "png" && resultFormat === "svg"
+        ? await svgToPngBlob(resultBlob)
+        : resultBlob;
+    await saveAs(blob, `diagram.${targetFormat}`);
   };
 
-  const handleCopy = async () => {
+  const handleCopy = async (asFormat?: OutputFormat) => {
     if (!resultBlob || !resultFormat) return;
+    setExportOpen(false);
+    const targetFormat = asFormat ?? resultFormat;
     try {
-      await copyToClipboard(resultBlob, resultFormat);
+      if (targetFormat === "png" && resultFormat === "svg") {
+        // Pass the promise directly to ClipboardItem so the write
+        // starts within the user gesture (awaiting first would expire it).
+        await navigator.clipboard.write([
+          new ClipboardItem({ "image/png": svgToPngBlob(resultBlob) }),
+        ]);
+      } else {
+        await copyToClipboard(resultBlob, resultFormat);
+      }
     } catch {
       // Clipboard API may not be available
     }
-    setExportOpen(false);
   };
 
   const themeIcon =
@@ -102,12 +116,31 @@ export function Toolbar({
         </button>
         {exportOpen && (
           <div className="toolbar-dropdown">
-            <button onClick={handleSave} className="toolbar-dropdown-item">
-              Save as file
-            </button>
-            <button onClick={handleCopy} className="toolbar-dropdown-item">
-              Copy to clipboard
-            </button>
+            {resultFormat === "svg" ? (
+              <>
+                <button onClick={() => handleSave("svg")} className="toolbar-dropdown-item">
+                  Save as SVG
+                </button>
+                <button onClick={() => handleSave("png")} className="toolbar-dropdown-item">
+                  Save as PNG
+                </button>
+                <button onClick={() => handleCopy("svg")} className="toolbar-dropdown-item">
+                  Copy SVG
+                </button>
+                <button onClick={() => handleCopy("png")} className="toolbar-dropdown-item">
+                  Copy PNG
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => handleSave()} className="toolbar-dropdown-item">
+                  Save as file
+                </button>
+                <button onClick={() => handleCopy()} className="toolbar-dropdown-item">
+                  Copy to clipboard
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>

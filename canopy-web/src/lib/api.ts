@@ -5,6 +5,20 @@ function getOutputFormat(type: DiagramType): OutputFormat {
   return OUTPUT_FORMAT[type] ?? "png";
 }
 
+/** Resolve virtual diagram types to their Kroki endpoint type. */
+function getKrokiType(type: DiagramType): string {
+  if (type === "d2-elk") return "d2";
+  return type;
+}
+
+const D2_ELK_VARS = `vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
+`;
+
 /** Parse line/column from Kroki error text (e.g. "line 5:12" or "Error at line 3"). */
 export function parseErrorLocation(
   text: string
@@ -27,12 +41,14 @@ export async function renderDiagram(
   signal?: AbortSignal
 ): Promise<RenderResult> {
   const format = getOutputFormat(type);
+  const krokiType = getKrokiType(type);
+  const body = type === "d2-elk" ? D2_ELK_VARS + source : source;
   const start = performance.now();
 
-  const res = await fetch(`/kroki/${type}/${format}`, {
+  const res = await fetch(`/kroki/${krokiType}/${format}`, {
     method: "POST",
     headers: { "Content-Type": "text/plain" },
-    body: source,
+    body,
     signal,
   });
 

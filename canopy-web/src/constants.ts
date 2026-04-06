@@ -11,7 +11,8 @@ export const DIAGRAM_TYPES: DiagramTypeInfo[] = [
   { id: "c4plantuml", label: "C4 PlantUML" },
   { id: "mermaid", label: "Mermaid" },
   { id: "graphviz", label: "Graphviz" },
-  { id: "d2", label: "D2" },
+  { id: "d2", label: "D2 - Dagre" },
+  { id: "d2-elk", label: "D2 - ELK" },
   { id: "dbml", label: "DBML" },
   { id: "ditaa", label: "Ditaa" },
   { id: "erd", label: "ERD" },
@@ -44,6 +45,7 @@ export const OUTPUT_FORMAT: Partial<Record<DiagramType, OutputFormat>> = {
   bpmn: "svg",
   bytefield: "svg",
   d2: "svg",
+  "d2-elk": "svg",
   dbml: "svg",
   excalidraw: "svg",
   nomnoml: "svg",
@@ -107,6 +109,20 @@ Rel(api, db, "Reads/Writes", "SQL")
 }`,
 
   d2: `D2 Parser: {
+  shape: class
+
+  +reader: io.RuneReader
+  readerPos: d2ast.Position
+  -lookahead: "[]rune"
+
+  +peek(): (r rune, eof bool)
+  rewind()
+  commit()
+}
+
+"github.com/terrastruct/d2parser.git" -> D2 Parser`,
+
+  "d2-elk": `D2 Parser: {
   shape: class
 
   +reader: io.RuneReader

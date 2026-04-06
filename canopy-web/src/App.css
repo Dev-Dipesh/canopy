@@ -31,6 +31,7 @@
   --color-primary: #7aa2f7;
   --color-primary-hover: #89b4fa;
   --color-primary-text: #1a1b26;
+  --color-primary-text-hover: #ffffff;
   --color-error: #f7768e;
   --color-error-bg: #2d1520;
   --color-success: #9ece6a;
@@ -131,6 +132,7 @@ body,
 .toolbar-btn-primary:hover {
   background: var(--color-primary-hover);
   border-color: var(--color-primary-hover);
+  color: var(--color-primary-text-hover, var(--color-primary-text));
 }
 
 .toolbar-toggle {
@@ -292,7 +294,7 @@ body,
   display: flex;
   align-items: center;
   justify-content: center;
-  max-width: 100%;
+  width: 100%;
 }
 
 .preview-svg-inline svg {
