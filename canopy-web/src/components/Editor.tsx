@@ -1,10 +1,11 @@
 import { useRef, useEffect, useCallback } from "react";
 import { EditorState, Compartment } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+import { indentOnInput, foldGutter, foldKeymap, bracketMatching, indentUnit } from "@codemirror/language";
 import type { DiagramType } from "../types";
-import { loadLanguageExtension } from "../lib/codemirror";
+import { loadLanguageExtension, supportsFolding } from "../lib/codemirror";
 import { lightTheme, darkTheme } from "../styles/codemirror-theme";
 
 interface EditorProps {
@@ -27,6 +28,7 @@ export function Editor({
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const langCompartment = useRef(new Compartment());
+  const foldCompartment = useRef(new Compartment());
   const themeCompartment = useRef(new Compartment());
   const onChangeRef = useRef(onChange);
   const onSubmitRef = useRef(onSubmit);
@@ -60,10 +62,20 @@ export function Editor({
         lineNumbers(),
         highlightActiveLine(),
         highlightSelectionMatches(),
+        bracketMatching(),
+        indentOnInput(),
+        indentUnit.of("  "),
         history(),
-        keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
+        keymap.of([
+          indentWithTab,
+          ...foldKeymap,
+          ...defaultKeymap,
+          ...historyKeymap,
+          ...searchKeymap,
+        ]),
         submitKeymap,
         langCompartment.current.of([]),
+        foldCompartment.current.of(supportsFolding(type) ? foldGutter() : []),
         themeCompartment.current.of(isDark ? darkTheme : lightTheme),
         updateListener,
         EditorView.lineWrapping,
@@ -103,6 +115,11 @@ export function Editor({
   useEffect(() => {
     const view = viewRef.current;
     if (!view) return;
+    view.dispatch({
+      effects: foldCompartment.current.reconfigure(
+        supportsFolding(type) ? foldGutter() : []
+      ),
+    });
     loadLanguageExtension(type).then((ext) => {
       view.dispatch({
         effects: langCompartment.current.reconfigure(ext),

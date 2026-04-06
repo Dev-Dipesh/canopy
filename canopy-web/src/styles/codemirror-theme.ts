@@ -33,6 +33,18 @@ export const lightTheme = EditorView.theme(
       backgroundColor: "#e8ecf4",
       color: "#1a202c",
     },
+    "&.cm-focused .cm-matchingBracket": {
+      backgroundColor: "#d7e4f7",
+      outline: "1px solid #93b4e0",
+    },
+    "&.cm-focused .cm-nonmatchingBracket": {
+      backgroundColor: "#fdd",
+      outline: "1px solid #e88",
+    },
+    ".cm-foldGutter .cm-gutterElement": {
+      cursor: "pointer",
+      color: "#6b7280",
+    },
   },
   { dark: false }
 );
@@ -69,6 +81,18 @@ export const darkTheme = EditorView.theme(
     ".cm-activeLineGutter": {
       backgroundColor: "#24283b",
       color: "#c0caf5",
+    },
+    "&.cm-focused .cm-matchingBracket": {
+      backgroundColor: "#3b4261",
+      outline: "1px solid #7aa2f7",
+    },
+    "&.cm-focused .cm-nonmatchingBracket": {
+      backgroundColor: "#4a2030",
+      outline: "1px solid #f7768e",
+    },
+    ".cm-foldGutter .cm-gutterElement": {
+      cursor: "pointer",
+      color: "#565f89",
     },
   },
   { dark: true }
