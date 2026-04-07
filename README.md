@@ -248,6 +248,7 @@ The MCP server exposes diagram rendering as AI tools. It starts an HTTP file ser
 | `search_diagrams` | Search previously rendered diagrams by title keyword |
 | `rename_diagram` | Rename a diagram in the registry by ID |
 | `delete_diagram` | Delete a diagram from the registry and disk by ID |
+| `get_diagram_source` | Retrieve the original source code of a rendered diagram by ID |
 
 The preview URL (e.g. `http://127.0.0.1:17432/?id=a1b2c3`) also opens in your browser via the gallery.
 
@@ -285,6 +286,7 @@ Restart Claude Desktop after editing. The MCP server starts automatically when t
 - `diagrams/private/` and `src/private/` are gitignored — use them for sensitive diagrams.
 - Non-diagram code blocks in `.md` files are silently skipped.
 - Rendered images are saved to `~/.canopy/output/` and persist across reboots. The registry is persisted to `~/.canopy/registry.json` and reloaded on each server start, so preview URLs remain valid indefinitely as long as the image file exists on disk.
+- **Source code persistence:** Diagram source is saved alongside the rendered image as `<id>.source`. The gallery lightbox has a Source/Diagram toggle to view and copy the original source. The `get_diagram_source` MCP tool returns source programmatically. Old diagrams rendered before this feature gracefully show no source button.
 - The MCP server ships a built-in main diagram style guide (format selection rules, color system, layout defaults) injected automatically into supporting clients. The guide now prefers PlantUML over Graphviz for most architecture and agent-system diagrams because it produces more stable, easier-to-read layouts for article, slide, and documentation use.
 - Use `get_diagram_preferences` at the start of normal diagram work. Use `get_excalidraw_preferences` when the user explicitly wants an Excalidraw-style whiteboard, camera-guided reveal, or delete/restoreCheckpoint transformation workflow.
 - The built-in guide also recommends titles, compact legends, selective numbering, and splitting large architecture diagrams into several smaller focused diagrams instead of forcing one dense image.

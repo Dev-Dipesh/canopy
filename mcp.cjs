@@ -16,11 +16,13 @@
  *   search_diagrams           - Search previously rendered diagrams by title keyword.
  *   rename_diagram            - Rename a diagram in the registry by ID.
  *   delete_diagram            - Delete a diagram from the registry and disk by ID.
+ *   get_diagram_source        - Retrieve the original source code of a rendered diagram.
  *
  * HTTP file server (same process, loopback only):
  *   GET  http://127.0.0.1:<port>/         → gallery page (all rendered diagrams)
  *   GET  http://127.0.0.1:<port>/?id=<id> → gallery opened in lightbox for that diagram
  *   GET  http://127.0.0.1:<port>/<id>     → raw image bytes (for <img> src in gallery)
+ *   GET  http://127.0.0.1:<port>/<id>/source → raw source text for a diagram
  *   DELETE http://127.0.0.1:<port>/<id>   → remove from registry + disk
  *   POST http://127.0.0.1:<port>/render { source, type } → raw image bytes (direct render)
  *   Preferred port: 17432 (tries 17432–17440 until one is free).
@@ -28,6 +30,7 @@
  *
  * Persistent storage:
  *   Images default to ~/.canopy/output/<id>.<ext> — survives reboots.
+ *   Source saved to ~/.canopy/output/<id>.source alongside the image.
  *   Registry persisted to ~/.canopy/registry.json — survives server restarts.
  *   Preview URLs remain valid as long as the image file exists on disk.
  *
@@ -215,20 +218,29 @@ function persistRegistry() {
  * @param {string} filePath - Absolute path to the rendered file.
  * @param {string} mimeType - MIME type (image/png or image/svg+xml).
  * @param {string|null} title - Optional human-readable title for gallery/search.
+ * @param {string|null} source - Optional diagram source text to persist.
+ * @param {string|null} diagramType - Optional Kroki diagram type (e.g. "plantuml").
  * @returns {string} Preview URL.
  */
 function previewBaseUrl() {
   return HTTP_PUBLIC_BASE_URL ?? `http://127.0.0.1:${httpPort}`;
 }
 
-function registerFile(filePath, mimeType, title = null) {
+function registerFile(filePath, mimeType, title = null, source = null, diagramType = null) {
   const id = crypto.randomBytes(6).toString("hex");
-  fileRegistry.set(id, {
+  const entry = {
     filePath,
     mimeType,
     title,
     createdAt: new Date().toISOString(),
-  });
+  };
+  if (source != null) {
+    const sourcePath = path.join(OUTPUT_DIR, `${id}.source`);
+    fs.writeFileSync(sourcePath, source, "utf8");
+    entry.sourcePath = sourcePath;
+    entry.diagramType = diagramType;
+  }
+  fileRegistry.set(id, entry);
   persistRegistry();
   return `${previewBaseUrl()}/?id=${id}`;
 }
@@ -240,18 +252,27 @@ function registerFile(filePath, mimeType, title = null) {
  *
  * @param {string} fmt - File extension without dot (e.g. "png", "svg").
  * @param {string|null} title - Optional human-readable title for gallery/search.
+ * @param {string|null} source - Optional diagram source text to persist.
+ * @param {string|null} diagramType - Optional Kroki diagram type (e.g. "plantuml").
  * @returns {{ filePath: string, previewUrl: string }}
  */
-function allocateOutput(fmt, title = null) {
+function allocateOutput(fmt, title = null, source = null, diagramType = null) {
   const id = crypto.randomBytes(6).toString("hex");
   const mimeType = fmt === "svg" ? "image/svg+xml" : "image/png";
   const filePath = path.join(OUTPUT_DIR, `${id}.${fmt}`);
-  fileRegistry.set(id, {
+  const entry = {
     filePath,
     mimeType,
     title,
     createdAt: new Date().toISOString(),
-  });
+  };
+  if (source != null) {
+    const sourcePath = path.join(OUTPUT_DIR, `${id}.source`);
+    fs.writeFileSync(sourcePath, source, "utf8");
+    entry.sourcePath = sourcePath;
+    entry.diagramType = diagramType;
+  }
+  fileRegistry.set(id, entry);
   persistRegistry();
   return { filePath, previewUrl: `${previewBaseUrl()}/?id=${id}` };
 }
@@ -306,6 +327,16 @@ h1{font-size:17px;font-weight:700;color:#fff;white-space:nowrap}
 #lb-next{right:8px}
 .lb-open-link{position:fixed;bottom:18px;font-size:12px;color:#888;text-decoration:none}
 .lb-open-link:hover{color:#ccc}
+.lb-src-btn{font-size:13px;cursor:pointer;color:#aaa;padding:4px 8px;border-radius:5px;border:1px solid rgba(170,170,170,.4)}
+.lb-src-btn:hover{background:rgba(255,255,255,.08);color:#fff}
+.lb-src-btn.active{color:#fff;background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.3)}
+.lb-source{display:none;position:fixed;top:52px;left:10vw;right:10vw;bottom:50px;background:#1e1e1e;border:1px solid #3a3a3c;border-radius:8px;flex-direction:column;overflow:hidden;z-index:101}
+.lb-source.open{display:flex}
+.lb-source-header{display:flex;align-items:center;justify-content:space-between;padding:8px 14px;background:#2a2a2c;border-bottom:1px solid #3a3a3c;flex-shrink:0}
+.lb-source-type{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.4px}
+.lb-source-copy{font-size:12px;cursor:pointer;color:#aaa;padding:3px 10px;border-radius:4px;border:1px solid rgba(170,170,170,.3);background:transparent}
+.lb-source-copy:hover{background:rgba(255,255,255,.08);color:#fff}
+.lb-source pre{flex:1;overflow:auto;margin:0;padding:14px;font-family:'SF Mono',Menlo,Consolas,monospace;font-size:12px;line-height:1.5;color:#d4d4d4;white-space:pre-wrap;word-wrap:break-word}
 </style>
 </head>
 <body>
@@ -321,6 +352,7 @@ h1{font-size:17px;font-weight:700;color:#fff;white-space:nowrap}
     <span class="lb-title" id="lb-title"></span>
     <span class="lb-meta" id="lb-meta"></span>
     <div class="lb-actions">
+      <span class="lb-src-btn" id="lb-src-btn">Source</span>
       <span class="lb-del" id="lb-del">Delete</span>
       <span class="lb-close" id="lb-close">✕</span>
     </div>
@@ -329,6 +361,13 @@ h1{font-size:17px;font-weight:700;color:#fff;white-space:nowrap}
   <img id="lb-img" src="" alt="">
   <span class="lb-nav" id="lb-next">&#8250;</span>
   <a class="lb-open-link" id="lb-open" href="" target="_blank">Open full size ↗</a>
+  <div class="lb-source" id="lb-source">
+    <div class="lb-source-header">
+      <span class="lb-source-type" id="lb-source-type"></span>
+      <button class="lb-source-copy" id="lb-source-copy">Copy</button>
+    </div>
+    <pre><code id="lb-source-code"></code></pre>
+  </div>
 </div>
 <script>
 const ALL = DIAGRAMS_JSON;
@@ -358,6 +397,7 @@ function renderGrid(list){
   g.querySelectorAll('.del-btn').forEach(btn=>btn.addEventListener('click',e=>{ e.stopPropagation(); del(btn.dataset.id); }));
 }
 
+let sourceCache={};
 function open(i){
   idx=i; const d=filtered[i];
   document.getElementById('lb-img').src='/'+d.id;
@@ -365,9 +405,42 @@ function open(i){
   document.getElementById('lb-title').textContent=d.title||'(untitled)';
   document.getElementById('lb-meta').textContent=[fmt(d.filePath),fmtDate(d.createdAt)].filter(Boolean).join(' · ');
   document.getElementById('lb-del').dataset.id=d.id;
+  document.getElementById('lb-src-btn').dataset.id=d.id;
+  document.getElementById('lb-src-btn').style.display=d.hasSource?'':'none';
+  hideSource();
   document.getElementById('lb').classList.add('open');
 }
-function close(){ document.getElementById('lb').classList.remove('open') }
+function close(){ document.getElementById('lb').classList.remove('open'); hideSource(); }
+function hideSource(){
+  document.getElementById('lb-source').classList.remove('open');
+  const btn=document.getElementById('lb-src-btn');
+  btn.classList.remove('active');
+  btn.textContent='Source';
+  document.getElementById('lb-img').style.display='';
+}
+async function toggleSource(){
+  const panel=document.getElementById('lb-source');
+  const btn=document.getElementById('lb-src-btn');
+  if(panel.classList.contains('open')){ hideSource(); return; }
+  const id=btn.dataset.id;
+  if(!id) return;
+  if(!sourceCache[id]){
+    try{
+      const r=await fetch('/'+id+'/source');
+      if(!r.ok){ sourceCache[id]={err:true}; }
+      else{ sourceCache[id]={text:await r.text()}; }
+    }catch{ sourceCache[id]={err:true}; }
+  }
+  const c=sourceCache[id];
+  if(c.err){ alert('Source not available for this diagram.'); return; }
+  document.getElementById('lb-source-code').textContent=c.text;
+  const d=filtered[idx];
+  document.getElementById('lb-source-type').textContent=(d.diagramType||fmt(d.filePath))+' source';
+  document.getElementById('lb-img').style.display='none';
+  panel.classList.add('open');
+  btn.classList.add('active');
+  btn.textContent='Diagram';
+}
 function nav(d){ open((idx+d+filtered.length)%filtered.length) }
 
 async function del(id){
@@ -387,6 +460,11 @@ document.getElementById('lb-close').addEventListener('click',close);
 document.getElementById('lb-del').addEventListener('click',function(){ del(this.dataset.id); });
 document.getElementById('lb-prev').addEventListener('click',()=>nav(-1));
 document.getElementById('lb-next').addEventListener('click',()=>nav(1));
+document.getElementById('lb-src-btn').addEventListener('click',toggleSource);
+document.getElementById('lb-source-copy').addEventListener('click',function(){
+  const text=document.getElementById('lb-source-code').textContent;
+  navigator.clipboard.writeText(text).then(()=>{this.textContent='Copied!';setTimeout(()=>{this.textContent='Copy';},1500);});
+});
 document.getElementById('search').addEventListener('input',function(){
   const q=this.value.toLowerCase();
   filtered=ALL.filter(d=>!q||(d.title||'').toLowerCase().includes(q));
@@ -479,6 +557,8 @@ function startHttpServer(port) {
           title: entry.title ?? null,
           filePath: entry.filePath,
           createdAt: entry.createdAt ?? null,
+          diagramType: entry.diagramType ?? null,
+          hasSource: !!(entry.sourcePath && fs.existsSync(entry.sourcePath)),
         }))
         .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
       const html = GALLERY_HTML.replace(
@@ -506,8 +586,36 @@ function startHttpServer(port) {
       } catch {
         // File already gone — registry is still cleaned up
       }
+      try {
+        if (entry.sourcePath && fs.existsSync(entry.sourcePath)) fs.unlinkSync(entry.sourcePath);
+      } catch {
+        // Source file already gone
+      }
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    // GET /<id>/source — serve the raw source text for a diagram
+    if (req.method === "GET" && req.url && req.url.endsWith("/source")) {
+      const id = req.url.slice(1, -"/source".length);
+      let entry = fileRegistry.get(id);
+      if (!entry) {
+        loadRegistry();
+        entry = fileRegistry.get(id);
+      }
+      if (!entry || !entry.sourcePath || !fs.existsSync(entry.sourcePath)) {
+        res.writeHead(404, { "Content-Type": "text/plain" });
+        res.end("Source not available");
+        return;
+      }
+      const source = fs.readFileSync(entry.sourcePath, "utf8");
+      res.writeHead(200, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Length": Buffer.byteLength(source),
+        "Cache-Control": "no-store",
+      });
+      res.end(source);
       return;
     }
 
@@ -1423,6 +1531,58 @@ server.registerTool(
   },
 );
 
+// ------ get_diagram_source ---------------------------------------------------
+
+server.registerTool(
+  "get_diagram_source",
+  {
+    description:
+      "Retrieve the original source code of a previously rendered diagram by its ID. " +
+      "Use search_diagrams to find the ID. Returns the raw source text and diagram type.",
+    inputSchema: z.object({
+      id: z
+        .string()
+        .describe("The diagram ID (short hex string from a preview URL)."),
+    }),
+  },
+  async ({ id }) => {
+    loadRegistry();
+    const entry = fileRegistry.get(id);
+    if (!entry) {
+      return {
+        content: [
+          { type: "text", text: `Error: No diagram found with ID "${id}".` },
+        ],
+        isError: true,
+      };
+    }
+    if (!entry.sourcePath || !fs.existsSync(entry.sourcePath)) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Error: No source available for diagram "${id}". It may have been rendered before source persistence was enabled.`,
+          },
+        ],
+        isError: true,
+      };
+    }
+    const source = fs.readFileSync(entry.sourcePath, "utf8");
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({
+            source,
+            diagramType: entry.diagramType ?? null,
+            title: entry.title ?? null,
+          }),
+        },
+      ],
+    };
+  },
+);
+
 // ------ render_diagram ------------------------------------------------------
 
 /**
@@ -1485,12 +1645,16 @@ server.registerTool(
         ({ filePath: outputPath, previewUrl } = allocateOutput(
           fmt,
           title ?? null,
+          source,
+          diagramType,
         ));
       }
     } else {
       ({ filePath: outputPath, previewUrl } = allocateOutput(
         fmt,
         title ?? null,
+        source,
+        diagramType,
       ));
     }
 
@@ -1501,7 +1665,7 @@ server.registerTool(
       fs.writeFileSync(outputPath, data);
       // Register user-provided path now that the file exists
       if (!previewUrl)
-        previewUrl = registerFile(outputPath, mimeType, title ?? null);
+        previewUrl = registerFile(outputPath, mimeType, title ?? null, source, diagramType);
       // Extract the hex ID from the gallery URL (?id=<id>) for the App client.
       const imageId = new URL(previewUrl).searchParams.get("id");
       return {
@@ -1630,18 +1794,25 @@ server.registerTool(
           outDir,
           krokiUrl,
         );
-        const validPaths = result.outputs.filter(Boolean);
         const mdBase = path.basename(resolvedInput, ".md");
-        const lines = validPaths.map((p) => {
+        const lines = [];
+        for (let i = 0; i < result.outputs.length; i++) {
+          const p = result.outputs[i];
+          if (!p) continue;
           const fmt = path.extname(p).slice(1);
           const mime = fmt === "svg" ? "image/svg+xml" : "image/png";
           const blockName = path.basename(p, `.${fmt}`);
           const entryTitle = title
             ? `${title} — ${blockName}`
             : `${mdBase} — ${blockName}`;
-          const url = registerFile(p, mime, entryTitle);
-          return `  ${path.basename(p)}  →  ${url}`;
-        });
+          const blockSource = result.sources[i];
+          const url = registerFile(
+            p, mime, entryTitle,
+            blockSource?.source ?? null,
+            blockSource?.krokiType ?? null,
+          );
+          lines.push(`  ${path.basename(p)}  →  ${url}`);
+        }
         const summary =
           `Rendered ${result.ok} diagram(s) from ${path.basename(resolvedInput)}` +
           (result.failed > 0 ? ` (${result.failed} failed)` : "") +
@@ -1659,7 +1830,7 @@ server.registerTool(
         const data = await krokiRender(source, diagramType, krokiUrl);
         fs.writeFileSync(outputPath, data);
         const fileTitle = title ?? path.basename(resolvedInput, ext);
-        const previewUrl = registerFile(outputPath, mimeType, fileTitle);
+        const previewUrl = registerFile(outputPath, mimeType, fileTitle, source, diagramType);
         return {
           content: [
             {
@@ -1754,6 +1925,11 @@ server.registerTool(
       if (fs.existsSync(entry.filePath)) fs.unlinkSync(entry.filePath);
     } catch {
       // File already gone — registry is still cleaned up
+    }
+    try {
+      if (entry.sourcePath && fs.existsSync(entry.sourcePath)) fs.unlinkSync(entry.sourcePath);
+    } catch {
+      // Source file already gone
     }
     return {
       content: [{ type: "text", text: `Deleted diagram "${label}" (${id}).` }],
