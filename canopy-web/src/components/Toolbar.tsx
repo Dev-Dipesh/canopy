@@ -13,6 +13,7 @@ interface ToolbarProps {
   onThemeCycle: () => void;
   resultBlob: Blob | null;
   resultFormat: OutputFormat | null;
+  onSaveToGallery: () => void;
 }
 
 export function Toolbar({
@@ -25,6 +26,7 @@ export function Toolbar({
   onThemeCycle,
   resultBlob,
   resultFormat,
+  onSaveToGallery,
 }: ToolbarProps) {
   const [exportOpen, setExportOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
@@ -130,6 +132,10 @@ export function Toolbar({
                 <button onClick={() => handleCopy("png")} className="toolbar-dropdown-item">
                   Copy PNG
                 </button>
+                <hr className="toolbar-dropdown-sep" />
+                <button onClick={() => { setExportOpen(false); onSaveToGallery(); }} className="toolbar-dropdown-item">
+                  Save to Gallery
+                </button>
               </>
             ) : (
               <>
@@ -138,6 +144,10 @@ export function Toolbar({
                 </button>
                 <button onClick={() => handleCopy()} className="toolbar-dropdown-item">
                   Copy to clipboard
+                </button>
+                <hr className="toolbar-dropdown-sep" />
+                <button onClick={() => { setExportOpen(false); onSaveToGallery(); }} className="toolbar-dropdown-item">
+                  Save to Gallery
                 </button>
               </>
             )}

@@ -11,6 +11,10 @@ export default defineConfig({
         target: "http://localhost:8000",
         rewrite: (path) => path.replace(/^\/kroki/, ""),
       },
+      "/canopy": {
+        target: "http://localhost:17432",
+        rewrite: (path) => path.replace(/^\/canopy/, ""),
+      },
     },
   },
 });

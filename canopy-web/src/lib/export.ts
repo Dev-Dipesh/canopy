@@ -1,4 +1,4 @@
-import type { OutputFormat } from "../types";
+import type { DiagramType, OutputFormat } from "../types";
 
 /** Save a blob using the OS file picker, falling back to direct download. */
 export async function saveAs(blob: Blob, filename: string): Promise<void> {
@@ -51,6 +51,48 @@ export async function copyToClipboard(
       new ClipboardItem({ [blob.type]: blob }),
     ]);
   }
+}
+
+/** Resolve virtual diagram types to their Kroki type for the gallery registry. */
+function resolveType(type: DiagramType): string {
+  if (type === "d2-elk") return "d2";
+  return type;
+}
+
+/** Save a diagram to the Canopy gallery via the MCP server. */
+export async function saveToGallery(
+  blob: Blob,
+  format: OutputFormat,
+  source: string,
+  type: DiagramType,
+  title?: string,
+): Promise<{ id: string; previewUrl: string; galleryUrl: string }> {
+  const buffer = await blob.arrayBuffer();
+  const binary = new Uint8Array(buffer);
+  let base64 = "";
+  for (let i = 0; i < binary.length; i += 8192) {
+    base64 += String.fromCharCode(...binary.subarray(i, i + 8192));
+  }
+  base64 = btoa(base64);
+
+  const res = await fetch("/canopy/save", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      image: base64,
+      format,
+      source,
+      type: resolveType(type),
+      title: title || undefined,
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "Save failed" }));
+    throw new Error(err.error ?? "Save failed");
+  }
+
+  return res.json();
 }
 
 /** Rasterize an SVG blob to a PNG blob via canvas. */

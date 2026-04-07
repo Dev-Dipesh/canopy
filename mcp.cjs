@@ -24,6 +24,7 @@
  *   GET  http://127.0.0.1:<port>/<id>     → raw image bytes (for <img> src in gallery)
  *   GET  http://127.0.0.1:<port>/<id>/source → raw source text for a diagram
  *   DELETE http://127.0.0.1:<port>/<id>   → remove from registry + disk
+ *   POST http://127.0.0.1:<port>/save   → save base64 image to gallery (returns { id, previewUrl, galleryUrl })
  *   POST http://127.0.0.1:<port>/render { source, type } → raw image bytes (direct render)
  *   Preferred port: 17432 (tries 17432–17440 until one is free).
  *   Override start port: DIAGRAM_RENDER_HTTP_PORT env var.
@@ -593,6 +594,46 @@ function startHttpServer(port) {
       }
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true }));
+      return;
+    }
+
+    // POST /save — save a base64-encoded image to the gallery
+    if (req.method === "POST" && req.url === "/save") {
+      const chunks = [];
+      req.on("data", (c) => chunks.push(c));
+      req.on("end", () => {
+        let body;
+        try {
+          body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        } catch {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Invalid JSON body" }));
+          return;
+        }
+
+        const { image, format, source, type: diagramType, title } = body;
+        if (!image || !format) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "image and format are required" }));
+          return;
+        }
+
+        const imageBytes = Buffer.from(image, "base64");
+        const { filePath, previewUrl } = allocateOutput(
+          format,
+          title || null,
+          source || null,
+          diagramType || null,
+        );
+        fs.writeFileSync(filePath, imageBytes);
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          id: path.basename(filePath, `.${format}`),
+          previewUrl,
+          galleryUrl: `${previewBaseUrl()}/`,
+        }));
+      });
       return;
     }
 

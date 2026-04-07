@@ -6,6 +6,7 @@ import { usePerTypeSource } from "./hooks/usePerTypeSource";
 import { useTheme } from "./hooks/useTheme";
 import { useDiagramRenderer } from "./hooks/useDiagramRenderer";
 import { usePanelResize } from "./hooks/usePanelResize";
+import { saveToGallery } from "./lib/export";
 import { Toolbar } from "./components/Toolbar";
 import { Editor } from "./components/Editor";
 import { Preview } from "./components/Preview";
@@ -53,6 +54,27 @@ export default function App() {
     setTimeout(() => setGoToLine(null), 50);
   }, []);
 
+  const handleSaveToGallery = useCallback(async () => {
+    const blob = renderer.result?.blob;
+    const fmt = renderer.result?.format;
+    if (!blob || !fmt) return;
+
+    const title = window.prompt("Diagram title (optional):");
+    if (title === null) return; // cancelled
+
+    try {
+      const { galleryUrl } = await saveToGallery(blob, fmt, source, type, title);
+      clearTimeout(toastTimer.current);
+      setToast(`Saved to gallery`);
+      toastTimer.current = setTimeout(() => setToast(null), 3000);
+      window.open(galleryUrl, "_blank");
+    } catch (err) {
+      clearTimeout(toastTimer.current);
+      setToast(`Gallery save failed: ${err instanceof Error ? err.message : err}`);
+      toastTimer.current = setTimeout(() => setToast(null), 4000);
+    }
+  }, [renderer.result, source, type]);
+
   const format: OutputFormat = OUTPUT_FORMAT[type] ?? "png";
 
   return (
@@ -67,6 +89,7 @@ export default function App() {
         onThemeCycle={theme.cycle}
         resultBlob={renderer.result?.blob ?? null}
         resultFormat={renderer.result?.format ?? null}
+        onSaveToGallery={handleSaveToGallery}
       />
 
       <div
